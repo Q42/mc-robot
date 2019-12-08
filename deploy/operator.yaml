@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mc-robot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: mc-robot
+  template:
+    metadata:
+      labels:
+        name: mc-robot
+    spec:
+      serviceAccountName: mc-robot
+      containers:
+        - name: mc-robot
+          # Replace this with the built image name
+          image: REPLACE_IMAGE
+          command:
+          - mc-robot
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "mc-robot"

@@ -1,0 +1,7 @@
+apiVersion: mc.q42.nl/v1
+kind: ServiceSync
+metadata:
+  name: example-servicesync
+spec:
+  # Add fields here
+  size: 3
