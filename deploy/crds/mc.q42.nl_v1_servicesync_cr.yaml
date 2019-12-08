@@ -3,5 +3,11 @@ kind: ServiceSync
 metadata:
   name: example-servicesync
 spec:
-  # Add fields here
-  size: 3
+  topicURL: gcppubsub://projects/myproject/topics/mytopic
+  selector:
+    matchLabels:
+      tier: my-tier
+    matchExpressions:
+      - {key: app, operator: In, values: [appA, appB, appC]}
+  endpointsPublishMax: 10 # optional, default = 0 for unlimited
+  endpointsConfigureMax: 0 # optional, default = 0 for unlimited

@@ -30,9 +30,91 @@ spec:
           type: object
         spec:
           description: ServiceSyncSpec defines the desired state of ServiceSync
+          properties:
+            endpointsConfigureMax:
+              description: How many endpoints to configure for each service in this
+                cluster (e.g. how many nodes should act as entry point). 0 is unlimited.
+                Set this to a lower value if any of the clusters has a lot of nodes
+                and a lot of endpoints from this to that cluster causes troubles with
+                the amount of ip table rules.
+              format: int32
+              type: integer
+            endpointsPublishMax:
+              description: How many endpoints to publish from this cluster (e.g. how
+                many nodes should act as entry point). 0 is unlimited. Set this to
+                a lower value if this cluster has a lot of nodes, and the amount of
+                data to sync becomes prohibitive. Note that the limited set of nodes
+                must be capable enough to accept the traffic and must be highly available,
+                e.g. setting it to 1 is not advisable.
+              format: int32
+              type: integer
+            selector:
+              description: Label selector for services. Only the services matching
+                this selector will be published.
+              properties:
+                matchExpressions:
+                  description: matchExpressions is a list of label selector requirements.
+                    The requirements are ANDed.
+                  items:
+                    description: A label selector requirement is a selector that contains
+                      values, a key, and an operator that relates the key and values.
+                    properties:
+                      key:
+                        description: key is the label key that the selector applies
+                          to.
+                        type: string
+                      operator:
+                        description: operator represents a key's relationship to a
+                          set of values. Valid operators are In, NotIn, Exists and
+                          DoesNotExist.
+                        type: string
+                      values:
+                        description: values is an array of string values. If the operator
+                          is In or NotIn, the values array must be non-empty. If the
+                          operator is Exists or DoesNotExist, the values array must
+                          be empty. This array is replaced during a strategic merge
+                          patch.
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - key
+                    - operator
+                    type: object
+                  type: array
+                matchLabels:
+                  additionalProperties:
+                    type: string
+                  description: matchLabels is a map of {key,value} pairs. A single
+                    {key,value} in the matchLabels map is equivalent to an element
+                    of matchExpressions, whose key field is "key", the operator is
+                    "In", and the values array contains only "value". The requirements
+                    are ANDed.
+                  type: object
+              type: object
+            topicURL:
+              description: URL of the PubSub topic, specified as for example "gcppubsub://projects/myproject/topics/mytopic".
+              type: string
+          required:
+          - selector
+          - topicURL
           type: object
         status:
           description: ServiceSyncStatus defines the observed state of ServiceSync
+          properties:
+            peerClusters:
+              description: Which clusters are we receiving data from?
+              items:
+                type: string
+              type: array
+            selectedServices:
+              description: Services matching the Selector & therefore will be published
+              items:
+                type: string
+              type: array
+          required:
+          - peerClusters
+          - selectedServices
           type: object
       type: object
   version: v1

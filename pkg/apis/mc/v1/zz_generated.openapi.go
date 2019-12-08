@@ -67,8 +67,40 @@ func schema_pkg_apis_mc_v1_ServiceSyncSpec(ref common.ReferenceCallback) common.
 			SchemaProps: spec.SchemaProps{
 				Description: "ServiceSyncSpec defines the desired state of ServiceSync",
 				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"selector": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Label selector for services. Only the services matching this selector will be published.",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelector"),
+						},
+					},
+					"topicURL": {
+						SchemaProps: spec.SchemaProps{
+							Description: "URL of the PubSub topic, specified as for example \"gcppubsub://projects/myproject/topics/mytopic\".",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"endpointsPublishMax": {
+						SchemaProps: spec.SchemaProps{
+							Description: "How many endpoints to publish from this cluster (e.g. how many nodes should act as entry point). 0 is unlimited. Set this to a lower value if this cluster has a lot of nodes, and the amount of data to sync becomes prohibitive. Note that the limited set of nodes must be capable enough to accept the traffic and must be highly available, e.g. setting it to 1 is not advisable.",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
+					"endpointsConfigureMax": {
+						SchemaProps: spec.SchemaProps{
+							Description: "How many endpoints to configure for each service in this cluster (e.g. how many nodes should act as entry point). 0 is unlimited. Set this to a lower value if any of the clusters has a lot of nodes and a lot of endpoints from this to that cluster causes troubles with the amount of ip table rules.",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
+				},
+				Required: []string{"selector", "topicURL"},
 			},
 		},
+		Dependencies: []string{
+			"k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelector"},
 	}
 }
 
@@ -78,6 +110,47 @@ func schema_pkg_apis_mc_v1_ServiceSyncStatus(ref common.ReferenceCallback) commo
 			SchemaProps: spec.SchemaProps{
 				Description: "ServiceSyncStatus defines the observed state of ServiceSync",
 				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"selectedServices": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "set",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Description: "Services matching the Selector & therefore will be published",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
+					"peerClusters": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "set",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Description: "Which clusters are we receiving data from?",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
+				},
+				Required: []string{"selectedServices", "peerClusters"},
 			},
 		},
 	}
