@@ -3,12 +3,14 @@ package servicesync
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,6 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
+var clusterNameLabel = "ClusterName" // clusterv1.ClusterNameLabel (from "sigs.k8s.io/cluster-api/api/v1alpha3" = master)
+var gkeNodePoolLabel = "cloud.google.com/gke-nodepool"
 var log = logf.Log.WithName("controller_servicesync")
 
 // Add creates a new ServiceSync Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -60,13 +64,40 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// - those pointing to other clusters that we configured and which we must keep up to date.
 	err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
-			// check if we are the owner
-			if ownerRef := metav1.GetControllerOf(a.Meta); ownerRef != nil {
-				log.Info(fmt.Sprintf("Service OwnerRef %#v", ownerRef))
+			service, ok := a.Object.(*corev1.Service)
+			if !ok {
+				log.Info("Uncastable corev1.Service")
+				return []reconcile.Request{}
 			}
 
-			log.Info(fmt.Sprintf("Reconciling for Service %#v", a))
-			return []reconcile.Request{}
+			requests := []reconcile.Request{}
+			syncs, err := reconciler.getServiceSyncs()
+			if err != nil {
+				return []reconcile.Request{}
+			}
+
+			// For any ServiceSync which Selector matches this changed service, enqueue a request
+			for _, sync := range syncs {
+				selector, err := metav1.LabelSelectorAsSelector(&sync.Spec.Selector)
+				if err == nil && selector.Matches(labels.Set(service.Labels)) {
+					log.Info(fmt.Sprintf("Service '%s' is elegible for ServiceSync '%s'", service.Name, sync.Name))
+					requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+						Name:      sync.GetName(),
+						Namespace: sync.GetNamespace(),
+					}})
+				}
+			}
+
+			// For any Service that a ServiceSync is the owner of, enqueue the owner ServiceSync
+			if ownerRef := metav1.GetControllerOf(a.Meta); ownerRef != nil {
+				log.Info(fmt.Sprintf("Service OwnerRef %#v", ownerRef))
+				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+					Name:      ownerRef.Name,
+					Namespace: a.Meta.GetNamespace(),
+				}})
+			}
+
+			return requests
 		}),
 	})
 	if err != nil {
@@ -79,7 +110,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
 			// Initially: lookup all nodes
 			if nodeList == nil {
-				nodeList, err = reconciler.getNodeList()
+				nodeList, err = reconciler.getLocalNodeList()
 				if err != nil {
 					log.Error(err, "Error while fetching node list")
 					return []reconcile.Request{}
@@ -104,11 +135,11 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-func (r *ReconcileServiceSync) getNodeList() (map[string]bool, error) {
+func (r *ReconcileServiceSync) getLocalNodeList() (map[string]bool, error) {
 	nodes := &corev1.NodeList{}
 	err := r.client.List(context.TODO(), nodes)
 	if err != nil {
-		log.Error(err, "Error while responding to node event")
+		log.Error(err, "Error while reading NodeList")
 		return nil, err
 	}
 
@@ -117,6 +148,43 @@ func (r *ReconcileServiceSync) getNodeList() (map[string]bool, error) {
 		schedulableMap[node.ObjectMeta.Name] = !node.Spec.Unschedulable
 	}
 	return schedulableMap, nil
+}
+
+func (r *ReconcileServiceSync) getLocalServiceMap() ([]mcv1.PeerService, error) {
+	services := &corev1.ServiceList{}
+	err := r.client.List(context.TODO(), services)
+	if err != nil {
+		log.Error(err, "Error while reading ServiceList")
+		return nil, err
+	}
+	nodes := &corev1.NodeList{}
+	err = r.client.List(context.TODO(), nodes)
+	if err != nil {
+		log.Error(err, "Error while reading NodeList")
+		return nil, err
+	}
+
+	log.Info(getClusterName(nodes.Items[0]))
+	// log.Info(fmt.Sprintf("Node %#v", nodes.Items[0]))
+	peerServices := make([]mcv1.PeerService, len(services.Items))
+	for i, service := range services.Items {
+		peerServices[i] = mcv1.PeerService{
+			Cluster:     "",
+			ServiceName: service.Name,
+			Endpoints:   []mcv1.PeerEndpoint{},
+		}
+	}
+	return peerServices, nil
+}
+
+func (r *ReconcileServiceSync) getServiceSyncs() ([]mcv1.ServiceSync, error) {
+	syncs := &mcv1.ServiceSyncList{}
+	err := r.client.List(context.TODO(), syncs)
+	if err != nil {
+		log.Error(err, "Error while reading ServiceSyncs")
+		return nil, err
+	}
+	return syncs.Items, nil
 }
 
 // Build according to example custom EnqueueRequestsFromMapFunc:
@@ -137,6 +205,25 @@ func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []rec
 		}})
 	}
 	return reqs
+}
+
+func getClusterName(node corev1.Node) string {
+	if node.Labels[clusterNameLabel] != "" {
+		return node.Labels[clusterNameLabel]
+	}
+	if node.ClusterName != "" {
+		return node.ClusterName
+	}
+
+	if _, hasLabel := node.Labels[gkeNodePoolLabel]; hasLabel {
+		postfix := "-" + node.Labels[gkeNodePoolLabel]
+		prefix := "gke-"
+		clusterName := strings.Split(strings.TrimPrefix(node.Name, prefix), postfix)[0]
+		log.Info(fmt.Sprintf("getClusterName: used a hack to determine the clusterName from hostname %s", node.Name))
+		return clusterName
+	}
+	log.Info(fmt.Sprintf("getClusterName from %#v", node))
+	panic("ClusterName could not be determined")
 }
 
 // blank assignment to verify that ReconcileServiceSync implements reconcile.Reconciler
@@ -161,12 +248,6 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling ServiceSync")
 
-	// Shortcut for now
-	if 1 > 0 {
-		reqLogger.Info(fmt.Sprintf("Request is %#v", request))
-		return reconcile.Result{}, nil
-	}
-
 	// Fetch the ServiceSync instance
 	instance := &mcv1.ServiceSync{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
@@ -178,7 +259,17 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		reqLogger.Error(err, "failure getting ServiceSync")
 		return reconcile.Result{}, err
+	}
+
+	reqLogger.Info(fmt.Sprintf("Reconciling %#v", instance))
+	_, _ = r.getLocalServiceMap()
+
+	// Shortcut for now
+	if 1 > 0 {
+		reqLogger.Info(fmt.Sprintf("Request is %#v", request))
+		return reconcile.Result{}, nil
 	}
 
 	// Worklist:

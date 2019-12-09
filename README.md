@@ -70,15 +70,15 @@ $ export GO111MODULE=on
 $ operator-sdk new mc-robot
 $ cd mc-robot
 $ operator-sdk add api --api-version=mc.q42.nl/v1 --kind=ServiceSync
-$ operator-sdk add api --api-version=mc.q42.nl/v1 --kind=ServiceSync
-$ operator-sdk generate k8s && operator-sdk generate openapi
 $ operator-sdk add controller --api-version=mc.q42.nl/v1 --kind=ServiceSync
+$ operator-sdk generate k8s && operator-sdk generate openapi
 ```
 
 ### 2.3 ADRs
 - [Initial architecture](./adr/0001-architecture.md)
 
 ### 2.4 Working documentation
-- https://medium.com/faun/writing-your-first-kubernetes-operator-8f3df4453234
 - [How to define, build and run a CRD/controller](https://github.com/operator-framework/getting-started#define-the-memcached-spec-and-status)
 - [How to write a reconciler](https://github.com/operator-framework/operator-sdk/blob/master/doc/user/client.md)
+- https://medium.com/faun/writing-your-first-kubernetes-operator-8f3df4453234
+- https://flugel.it/building-custom-kubernetes-operators-part-3-building-operators-in-go-using-operator-sdk/
