@@ -37,13 +37,39 @@ type ServiceSyncStatus struct {
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
 
-	// Services matching the Selector & therefore will be published
+	// Services that match the Selector & therefore will be published
 	// +listType=set
 	SelectedServices []string `json:"selectedServices"`
 
 	// Which clusters are we receiving data from?
 	// +listType=set
 	PeerClusters []string `json:"peerClusters"`
+
+	// Which endpoints did we receive from those clusters?
+	PeerServices map[string][]PeerService `json:"peerServices"`
+
+	// Last time the data was published
+	LastPublishTime metav1.Time `json:"lastPublishTime"`
+
+	// Hash of the data transmitted last (to deduplicate)
+	LastPublishHash string `json:"lastPublishHash"`
+}
+
+// PeerService represents a Service in a remote cluster
+// +k8s:openapi-gen=true
+type PeerService struct {
+	Cluster     string `json:"cluster"`
+	ServiceName string `json:"serviceName"`
+	// +listType=set
+	Endpoints []PeerEndpoint `json:"endpoints"`
+}
+
+// PeerEndpoint represents a Node from a Service in a remote cluster
+// +k8s:openapi-gen=true
+type PeerEndpoint struct {
+	IPAddress    string `json:"ipAddress"`
+	Hostname     string `json:"hostname"`
+	ExternalPort int32  `json:"externalPort"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

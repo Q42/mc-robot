@@ -102,18 +102,30 @@ spec:
         status:
           description: ServiceSyncStatus defines the observed state of ServiceSync
           properties:
+            lastPublishHash:
+              description: Hash of the data transmitted last (to deduplicate)
+              type: string
+            lastPublishTime:
+              description: Last time the data was published
+              format: date-time
+              type: string
             peerClusters:
               description: Which clusters are we receiving data from?
               items:
                 type: string
               type: array
+            peerServices:
+              description: Which endpoints did we receive from those clusters?
             selectedServices:
-              description: Services matching the Selector & therefore will be published
+              description: Services that match the Selector & therefore will be published
               items:
                 type: string
               type: array
           required:
+          - lastPublishHash
+          - lastPublishTime
           - peerClusters
+          - peerServices
           - selectedServices
           type: object
       type: object

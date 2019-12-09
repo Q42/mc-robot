@@ -17,8 +17,7 @@ spec:
         - name: mc-robot
           # Replace this with the built image name
           image: REPLACE_IMAGE
-          command:
-          - mc-robot
+          command: ["mc-robot"]
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE
@@ -31,3 +30,14 @@ spec:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
               value: "mc-robot"
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/secrets/serviceaccount.json"
+          volumeMounts:
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          secret:
+            # create this secret with serviceaccount.json
+            secretName: mc-robot-credentials

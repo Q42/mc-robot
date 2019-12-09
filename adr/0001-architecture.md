@@ -5,6 +5,8 @@ The architecture of this app is a in-cluster container (Pod) that connects to Pu
 Kubernetes Services will be created and maintained for each of the services exported by the peers.
 Each instance reports the nodes of the cluster and the NodePorts that are a property of the services in the cluster to a central PubSub topic.
 
+This is enabled by [Services without Selectors](https://kubernetes.io/docs/concepts/services-networking/service/#services-without-selectors).
+
 ## Choice of ServiceType
 Kubernetes has 4 service types:
 1. ClusterIP: assigns a cluster internal IP address that each kube-proxy Round Robin-routes to pods

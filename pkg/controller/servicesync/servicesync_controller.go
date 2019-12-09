@@ -2,6 +2,7 @@ package servicesync
 
 import (
 	"context"
+	"fmt"
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 
@@ -12,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -21,11 +21,6 @@ import (
 )
 
 var log = logf.Log.WithName("controller_servicesync")
-
-/**
-* USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
-* business logic.  Delete these comments after modifying this file.*
- */
 
 // Add creates a new ServiceSync Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -40,6 +35,8 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
+	reconciler := r.(*ReconcileServiceSync)
+
 	// Create a new controller
 	c, err := controller.New("servicesync-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -52,17 +49,94 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner ServiceSync
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &mcv1.ServiceSync{},
+	// Watch endpoints that we are the owner of (for if endpoints would be deleted manually, we'll recreate them)
+	err = c.Watch(&source.Kind{Type: &corev1.Endpoints{}}, &handler.EnqueueRequestForOwner{IsController: true, OwnerType: &mcv1.ServiceSync{}})
+	if err != nil {
+		return err
+	}
+
+	// Watch services:
+	// - those pointing to our cluster (those which we might publish) &
+	// - those pointing to other clusters that we configured and which we must keep up to date.
+	err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+			// check if we are the owner
+			if ownerRef := metav1.GetControllerOf(a.Meta); ownerRef != nil {
+				log.Info(fmt.Sprintf("Service OwnerRef %#v", ownerRef))
+			}
+
+			log.Info(fmt.Sprintf("Reconciling for Service %#v", a))
+			return []reconcile.Request{}
+		}),
+	})
+	if err != nil {
+		return err
+	}
+
+	// Watch nodes, because we must publish this information
+	var nodeList map[string]bool
+	err = c.Watch(&source.Kind{Type: &corev1.Node{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+			// Initially: lookup all nodes
+			if nodeList == nil {
+				nodeList, err = reconciler.getNodeList()
+				if err != nil {
+					log.Error(err, "Error while fetching node list")
+					return []reconcile.Request{}
+				}
+				log.Info("Filling initial node list & enqueuing sync.")
+				return reconciler.enqueueAllServiceSyncs(a)
+			}
+			// Check if something changed
+			if node, ok := a.Object.(*corev1.Node); ok && node.Spec.Unschedulable == nodeList[node.ObjectMeta.Name] {
+				nodeList[node.ObjectMeta.Name] = !node.Spec.Unschedulable
+				log.Info("Node schedulability changed. Propagating.")
+				return reconciler.enqueueAllServiceSyncs(a)
+			}
+			// Else do nothing
+			return []reconcile.Request{}
+		}),
 	})
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (r *ReconcileServiceSync) getNodeList() (map[string]bool, error) {
+	nodes := &corev1.NodeList{}
+	err := r.client.List(context.TODO(), nodes)
+	if err != nil {
+		log.Error(err, "Error while responding to node event")
+		return nil, err
+	}
+
+	schedulableMap := make(map[string]bool, len(nodes.Items))
+	for _, node := range nodes.Items {
+		schedulableMap[node.ObjectMeta.Name] = !node.Spec.Unschedulable
+	}
+	return schedulableMap, nil
+}
+
+// Build according to example custom EnqueueRequestsFromMapFunc:
+// https://github.com/kubernetes-sigs/controller-runtime/blob/dfc2508132/pkg/handler/example_test.go#L69-L78
+func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []reconcile.Request {
+	syncs := &mcv1.ServiceSyncList{}
+	err := r.client.List(context.TODO(), syncs)
+	if err != nil {
+		log.Error(err, "Error while responding to node event")
+		return []reconcile.Request{}
+	}
+
+	reqs := []reconcile.Request{}
+	for _, sync := range syncs.Items {
+		reqs = append(reqs, reconcile.Request{NamespacedName: types.NamespacedName{
+			Name:      sync.GetName(),
+			Namespace: sync.GetNamespace(),
+		}})
+	}
+	return reqs
 }
 
 // blank assignment to verify that ReconcileServiceSync implements reconcile.Reconciler
@@ -87,6 +161,12 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("Reconciling ServiceSync")
 
+	// Shortcut for now
+	if 1 > 0 {
+		reqLogger.Info(fmt.Sprintf("Request is %#v", request))
+		return reconcile.Result{}, nil
+	}
+
 	// Fetch the ServiceSync instance
 	instance := &mcv1.ServiceSync{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
@@ -101,54 +181,61 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
+	// Worklist:
+	// - Define Services for each of the PeerServices in the status
+	// - Publish to PubSub
+	// Elsewhere:
+	// - Subscribe to PubSub & write to status
 
-	// Set ServiceSync instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-		return reconcile.Result{}, err
-	}
+	// // Define a new Pod object
+	// pod := newPodForCR(instance)
 
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
+	// // Set ServiceSync instance as the owner and controller
+	// import "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	// if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	// 	return reconcile.Result{}, err
+	// }
 
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
-	}
+	// // Check if this Pod already exists
+	// found := &corev1.Pod{}
+	// err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+	// if err != nil && errors.IsNotFound(err) {
+	// 	reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
+	// 	err = r.client.Create(context.TODO(), pod)
+	// 	if err != nil {
+	// 		return reconcile.Result{}, err
+	// 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+	// 	// Pod created successfully - don't requeue
+	// 	return reconcile.Result{}, nil
+	// } else if err != nil {
+	// 	return reconcile.Result{}, err
+	// }
+
+	// // Pod already exists - don't requeue
+	// reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
 	return reconcile.Result{}, nil
 }
 
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *mcv1.ServiceSync) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
-	}
-}
+// // newPodForCR returns a busybox pod with the same name/namespace as the cr
+// func newPodForCR(cr *mcv1.ServiceSync) *corev1.Pod {
+// 	labels := map[string]string{
+// 		"app": cr.Name,
+// 	}
+// 	return &corev1.Pod{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      cr.Name + "-pod",
+// 			Namespace: cr.Namespace,
+// 			Labels:    labels,
+// 		},
+// 		Spec: corev1.PodSpec{
+// 			Containers: []corev1.Container{
+// 				{
+// 					Name:    "busybox",
+// 					Image:   "busybox",
+// 					Command: []string{"sleep", "3600"},
+// 				},
+// 			},
+// 		},
+// 	}
+// }
