@@ -82,3 +82,4 @@ $ operator-sdk generate k8s && operator-sdk generate openapi
 - [How to write a reconciler](https://github.com/operator-framework/operator-sdk/blob/master/doc/user/client.md)
 - https://medium.com/faun/writing-your-first-kubernetes-operator-8f3df4453234
 - https://flugel.it/building-custom-kubernetes-operators-part-3-building-operators-in-go-using-operator-sdk/
+- Inspiration regarding controller-runtime utils: https://github.com/openshift/cluster-ingress-operator/

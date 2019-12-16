@@ -12,6 +12,7 @@ import (
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
 		"./pkg/apis/mc/v1.PeerEndpoint":      schema_pkg_apis_mc_v1_PeerEndpoint(ref),
+		"./pkg/apis/mc/v1.PeerPort":          schema_pkg_apis_mc_v1_PeerPort(ref),
 		"./pkg/apis/mc/v1.PeerService":       schema_pkg_apis_mc_v1_PeerService(ref),
 		"./pkg/apis/mc/v1.ServiceSync":       schema_pkg_apis_mc_v1_ServiceSync(ref),
 		"./pkg/apis/mc/v1.ServiceSyncSpec":   schema_pkg_apis_mc_v1_ServiceSyncSpec(ref),
@@ -38,6 +39,26 @@ func schema_pkg_apis_mc_v1_PeerEndpoint(ref common.ReferenceCallback) common.Ope
 							Format: "",
 						},
 					},
+				},
+				Required: []string{"ipAddress", "hostname"},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_mc_v1_PeerPort(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "PeerPort represents a port of a Service in a remote cluster",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"internalPort": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int32",
+						},
+					},
 					"externalPort": {
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"integer"},
@@ -45,7 +66,7 @@ func schema_pkg_apis_mc_v1_PeerEndpoint(ref common.ReferenceCallback) common.Ope
 						},
 					},
 				},
-				Required: []string{"ipAddress", "hostname", "externalPort"},
+				Required: []string{"internalPort", "externalPort"},
 			},
 		},
 	}
@@ -87,12 +108,29 @@ func schema_pkg_apis_mc_v1_PeerService(ref common.ReferenceCallback) common.Open
 							},
 						},
 					},
+					"ports": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "set",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("./pkg/apis/mc/v1.PeerPort"),
+									},
+								},
+							},
+						},
+					},
 				},
-				Required: []string{"cluster", "serviceName", "endpoints"},
+				Required: []string{"cluster", "serviceName", "endpoints", "ports"},
 			},
 		},
 		Dependencies: []string{
-			"./pkg/apis/mc/v1.PeerEndpoint"},
+			"./pkg/apis/mc/v1.PeerEndpoint", "./pkg/apis/mc/v1.PeerPort"},
 	}
 }
 

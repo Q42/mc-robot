@@ -62,14 +62,22 @@ type PeerService struct {
 	ServiceName string `json:"serviceName"`
 	// +listType=set
 	Endpoints []PeerEndpoint `json:"endpoints"`
+	// +listType=set
+	Ports []PeerPort `json:"ports"`
 }
 
 // PeerEndpoint represents a Node from a Service in a remote cluster
 // +k8s:openapi-gen=true
 type PeerEndpoint struct {
-	IPAddress    string `json:"ipAddress"`
-	Hostname     string `json:"hostname"`
-	ExternalPort int32  `json:"externalPort"`
+	IPAddress string `json:"ipAddress"`
+	Hostname  string `json:"hostname"`
+}
+
+// PeerPort represents a port of a Service in a remote cluster
+// +k8s:openapi-gen=true
+type PeerPort struct {
+	InternalPort int32 `json:"internalPort"`
+	ExternalPort int32 `json:"externalPort"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
