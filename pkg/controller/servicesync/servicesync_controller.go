@@ -165,6 +165,64 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
+// blank assignment to verify that ReconcileServiceSync implements reconcile.Reconciler
+var _ reconcile.Reconciler = &ReconcileServiceSync{}
+
+// ReconcileServiceSync reconciles a ServiceSync object
+type ReconcileServiceSync struct {
+	// This client, initialized using mgr.Client() above, is a split client
+	// that reads objects from the cache and writes to the apiserver
+	client   client.Client
+	scheme   *runtime.Scheme
+	recorder record.EventRecorder
+	es       datasource.ExternalSource
+}
+
+// Reconcile reads that state of the cluster for a ServiceSync object and makes changes based on the state read
+// and what is in the ServiceSync.Spec
+func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	reqLogger.Info("Reconciling ServiceSync")
+	ctx := context.Background()
+
+	// Fetch the ServiceSync instance
+	instance := &mcv1.ServiceSync{}
+	err := r.client.Get(ctx, request.NamespacedName, instance)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request. Return and don't requeue.
+			return reconcile.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		reqLogger.Error(err, "failure getting ServiceSync")
+		return reconcile.Result{}, err
+	}
+
+	r.es.Subscribe(request.NamespacedName.String(), r.callbackFor(request.NamespacedName))
+	err = r.ensurePeerServices(instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	sm, _ := r.getLocalServiceMap(instance)
+	if clusterName == "" {
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
+	}
+
+	if instance.Status.LastPublishTime.IsZero() || instance.Status.LastPublishTime.Add(5*time.Minute).Before(time.Now()) {
+		// published too long ago (or never), so publish!
+		jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: sm})
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		r.es.Publish(request.NamespacedName.String(), jsonData, clusterName)
+		// then reschedule reconcile after 5 minutes again
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
+	return reconcile.Result{}, nil
+}
+
 func (r *ReconcileServiceSync) getLocalNodeList() (map[string]bool, error) {
 	nodes := &corev1.NodeList{}
 	err := r.client.List(context.Background(), nodes)
@@ -263,93 +321,6 @@ func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []rec
 		}})
 	}
 	return reqs
-}
-
-func getClusterName(nodes []corev1.Node) string {
-	if len(nodes) == 0 {
-		return ""
-	}
-
-	node := nodes[0]
-	if node.Labels[clusterNameLabel] != "" {
-		return node.Labels[clusterNameLabel]
-	}
-	if node.ClusterName != "" {
-		return node.ClusterName
-	}
-
-	if _, hasLabel := node.Labels[gkeNodePoolLabel]; hasLabel {
-		postfix := "-" + node.Labels[gkeNodePoolLabel]
-		prefix := "gke-"
-		clusterName := strings.Split(strings.TrimPrefix(node.Name, prefix), postfix)[0]
-		log.Info(fmt.Sprintf("getClusterName: used a hack to determine the clusterName from hostname %s", node.Name))
-		return clusterName
-	}
-	log.Info(fmt.Sprintf("getClusterName from %#v", node))
-	panic("ClusterName could not be determined")
-}
-
-// blank assignment to verify that ReconcileServiceSync implements reconcile.Reconciler
-var _ reconcile.Reconciler = &ReconcileServiceSync{}
-
-// ReconcileServiceSync reconciles a ServiceSync object
-type ReconcileServiceSync struct {
-	// This client, initialized using mgr.Client() above, is a split client
-	// that reads objects from the cache and writes to the apiserver
-	client   client.Client
-	scheme   *runtime.Scheme
-	recorder record.EventRecorder
-	es       datasource.ExternalSource
-}
-
-// Reconcile reads that state of the cluster for a ServiceSync object and makes changes based on the state read
-// and what is in the ServiceSync.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
-// Note:
-// The Controller will requeue the Request to be processed again if the returned error is non-nil or
-// Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
-func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling ServiceSync")
-	ctx := context.Background()
-
-	// Fetch the ServiceSync instance
-	instance := &mcv1.ServiceSync{}
-	err := r.client.Get(ctx, request.NamespacedName, instance)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request. Return and don't requeue.
-			return reconcile.Result{}, nil
-		}
-		// Error reading the object - requeue the request.
-		reqLogger.Error(err, "failure getting ServiceSync")
-		return reconcile.Result{}, err
-	}
-
-	r.es.Subscribe(request.NamespacedName.String(), r.callbackFor(request.NamespacedName))
-	err = r.ensurePeerServices(instance)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	sm, _ := r.getLocalServiceMap(instance)
-	if clusterName == "" {
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
-	}
-
-	if instance.Status.LastPublishTime.IsZero() || instance.Status.LastPublishTime.Add(5*time.Minute).Before(time.Now()) {
-		// published too long ago (or never), so publish!
-		jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: sm})
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		r.es.Publish(request.NamespacedName.String(), jsonData, clusterName)
-		// then reschedule reconcile after 5 minutes again
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-	}
-
-	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byte, string) {
@@ -462,6 +433,30 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 	return nil
 }
 
+func getClusterName(nodes []corev1.Node) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+
+	node := nodes[0]
+	if node.Labels[clusterNameLabel] != "" {
+		return node.Labels[clusterNameLabel]
+	}
+	if node.ClusterName != "" {
+		return node.ClusterName
+	}
+
+	if _, hasLabel := node.Labels[gkeNodePoolLabel]; hasLabel {
+		postfix := "-" + node.Labels[gkeNodePoolLabel]
+		prefix := "gke-"
+		clusterName := strings.Split(strings.TrimPrefix(node.Name, prefix), postfix)[0]
+		log.Info(fmt.Sprintf("getClusterName: used a hack to determine the clusterName from hostname %s", node.Name))
+		return clusterName
+	}
+	log.Info(fmt.Sprintf("getClusterName from %#v", node))
+	panic("ClusterName could not be determined")
+}
+
 func keys(m interface{}) []string {
 	mp, isMap := m.(map[string]interface{})
 	if !isMap {
@@ -499,29 +494,6 @@ func ownerRefS(sync *corev1.Service) metav1.OwnerReference {
 	}
 }
 
-// // newPodForCR returns a busybox pod with the same name/namespace as the cr
-// func newPodForCR(cr *mcv1.ServiceSync) *corev1.Pod {
-// 	labels := map[string]string{
-// 		"app": cr.Name,
-// 	}
-// 	return &corev1.Pod{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name:      cr.Name + "-pod",
-// 			Namespace: cr.Namespace,
-// 			Labels:    labels,
-// 		},
-// 		Spec: corev1.PodSpec{
-// 			Containers: []corev1.Container{
-// 				{
-// 					Name:    "busybox",
-// 					Image:   "busybox",
-// 					Command: []string{"sleep", "3600"},
-// 				},
-// 			},
-// 		},
-// 	}
-// }
-
 func endpointsForHostsAndPort(nodes []corev1.Node) []mcv1.PeerEndpoint {
 	var list = make([]mcv1.PeerEndpoint, len(nodes))
 	for i, node := range nodes {
@@ -537,27 +509,7 @@ func endpointsForHostsAndPort(nodes []corev1.Node) []mcv1.PeerEndpoint {
 	return list
 }
 
-func patchFromRemoteState(ps map[string][]mcv1.PeerService) client.Patch {
-	clusters := make([]string, 0)
-	for cluster := range ps {
-		clusters = append(clusters, cluster)
-	}
-	mergePatch, err := json.Marshal(map[string]interface{}{
-		"status": mcv1.ServiceSyncStatus{
-			PeerClusters:     clusters,
-			PeerServices:     ps,
-			SelectedServices: []string{},
-			LastPublishTime:  metav1.NewTime(time.Now()),
-			LastPublishHash:  "",
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	return client.ConstantPatch(types.MergePatchType, mergePatch)
-}
-
+// Builds up a Service & Endpoints as it should be created for the PeerService
 func serviceForPeer(peerService mcv1.PeerService, namespace string) (corev1.Service, corev1.Endpoints) {
 	serviceName := fmt.Sprintf("%s-%s", peerService.Cluster, peerService.ServiceName)
 	service := corev1.Service{}
