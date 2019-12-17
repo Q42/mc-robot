@@ -13,6 +13,7 @@ import (
 
 	"q42/mc-robot/pkg/apis"
 	"q42/mc-robot/pkg/controller"
+	"q42/mc-robot/pkg/datasource"
 	"q42/mc-robot/version"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
@@ -109,8 +110,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup datasource
+	ds := datasource.New()
+
 	// Setup all Controllers
-	if err := controller.AddToManager(mgr); err != nil {
+	if err := controller.AddToManager(mgr, ds); err != nil {
 		log.Error(err, "")
 		os.Exit(1)
 	}

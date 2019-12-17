@@ -83,3 +83,6 @@ $ operator-sdk generate k8s && operator-sdk generate openapi
 - https://medium.com/faun/writing-your-first-kubernetes-operator-8f3df4453234
 - https://flugel.it/building-custom-kubernetes-operators-part-3-building-operators-in-go-using-operator-sdk/
 - Inspiration regarding controller-runtime utils: https://github.com/openshift/cluster-ingress-operator/
+- [Installing kubebuilder](https://github.com/kubernetes-sigs/kubebuilder/issues/326#issuecomment-494878466) &
+  [testing with Kubebuilder envtest](https://github.com/kubernetes-sigs/controller-runtime/blob/master/FAQ.md)
+- [Testing without Kubebuilder envtest](http://engineering.pivotal.io/post/gp4k-kubebuilder-tdd/)

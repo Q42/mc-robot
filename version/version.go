@@ -1,5 +1,6 @@
 package version
 
 var (
-	Version = "0.0.1"
+	// Version of the mc-robot operator
+	Version = "1.0.0"
 )

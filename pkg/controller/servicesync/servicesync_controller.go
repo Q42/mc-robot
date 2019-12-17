@@ -9,6 +9,7 @@ import (
 	"time"
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
+	"q42/mc-robot/pkg/datasource"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -36,25 +37,28 @@ const (
 	controllerName   = "mc_robot"
 	clusterNameLabel = "ClusterName" // clusterv1.ClusterNameLabel (from "sigs.k8s.io/cluster-api/api/v1alpha3" = master)
 	gkeNodePoolLabel = "cloud.google.com/gke-nodepool"
-	eventTypeNormal  = "Normal" // kubernetes supports values Normal & Warning
+	eventTypeNormal  = "Normal"  // kubernetes supports values Normal & Warning
+	eventTypeWarning = "Warning" // kubernetes supports values Normal & Warning
 )
 
 var log = logf.Log.WithName("controller_servicesync")
 var remoteStatus = make(map[string][]mcv1.PeerService, 0)
 var pubSubTriggers = make(chan reconcile.Request, 0)
+var clusterName string
 
 // Add creates a new ServiceSync Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager) error {
-	return add(mgr, newReconciler(mgr))
+func Add(mgr manager.Manager, es datasource.ExternalSource) error {
+	return add(mgr, newReconciler(mgr, es))
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+func newReconciler(mgr manager.Manager, es datasource.ExternalSource) reconcile.Reconciler {
 	return &ReconcileServiceSync{
 		client:   mgr.GetClient(),
 		scheme:   mgr.GetScheme(),
 		recorder: mgr.GetEventRecorderFor(controllerName),
+		es:       es,
 	}
 }
 
@@ -189,17 +193,9 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 		log.Error(err, "Error while computing ServiceMap")
 		return nil, err
 	}
-	nodes := &corev1.NodeList{}
-	err = r.client.List(context.Background(), nodes)
-	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
-		return nil, err
-	}
-	if len(nodes.Items) == 0 {
-		log.Error(stderrors.New("No nodes found"), "Error while reading NodeList")
-	}
 
-	clusterName := getClusterName(nodes.Items[0])
+	nodes, err := r.getNodes()
+	clusterName = getClusterName(nodes)
 	// log.Info(fmt.Sprintf("Node %#v", nodes.Items[0]))
 	peerServices := make([]mcv1.PeerService, 0)
 	for _, service := range services.Items {
@@ -222,6 +218,21 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 		}
 	}
 	return peerServices, nil
+}
+
+func (r *ReconcileServiceSync) getNodes() ([]corev1.Node, error) {
+	nodes := &corev1.NodeList{}
+	err := r.client.List(context.Background(), nodes)
+	if err != nil {
+		log.Error(err, "Error while computing ServiceMap")
+		return nil, err
+	}
+	if len(nodes.Items) == 0 {
+		err = stderrors.New("No nodes found")
+		log.Error(err, "Error while reading NodeList")
+		return nil, err
+	}
+	return nodes.Items, nil
 }
 
 func (r *ReconcileServiceSync) getServiceSyncs() ([]mcv1.ServiceSync, error) {
@@ -254,7 +265,12 @@ func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []rec
 	return reqs
 }
 
-func getClusterName(node corev1.Node) string {
+func getClusterName(nodes []corev1.Node) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+
+	node := nodes[0]
 	if node.Labels[clusterNameLabel] != "" {
 		return node.Labels[clusterNameLabel]
 	}
@@ -283,6 +299,7 @@ type ReconcileServiceSync struct {
 	client   client.Client
 	scheme   *runtime.Scheme
 	recorder record.EventRecorder
+	es       datasource.ExternalSource
 }
 
 // Reconcile reads that state of the cluster for a ServiceSync object and makes changes based on the state read
@@ -310,75 +327,91 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
+	r.es.Subscribe(request.NamespacedName.String(), r.callbackFor(request.NamespacedName))
 	err = r.ensurePeerServices(instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	sm, _ := r.getLocalServiceMap(instance)
-	if instance.Status.LastPublishTime.IsZero() || instance.Status.LastPublishTime.Add(5*time.Minute).Before(time.Now()) {
-		// published too long ago (or never)
-		// so publish!
-		// then reschedule reconcile after 5 minutes again
+	if clusterName == "" {
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
 	}
 
-	go func() {
-		remoteStatus = map[string][]mcv1.PeerService{
-			"other-cluster-2": cloneWithClusterName(sm, "other-cluster-2"),
-			"other-cluster-3": cloneWithClusterName(sm, "hue-earth-3"),
+	if instance.Status.LastPublishTime.IsZero() || instance.Status.LastPublishTime.Add(5*time.Minute).Before(time.Now()) {
+		// published too long ago (or never), so publish!
+		jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: sm})
+		if err != nil {
+			return reconcile.Result{}, err
 		}
-		time.Sleep(5 * time.Second)
+		r.es.Publish(request.NamespacedName.String(), jsonData, clusterName)
+		// then reschedule reconcile after 5 minutes again
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
 
-		err := r.client.Get(ctx, request.NamespacedName, instance)
-		panicOnError(err)
-		oldStatus := instance.Status.DeepCopy()
-		updateStatusFromRemoteState(instance, remoteStatus)
-		if !operatorStatusesEqual(*oldStatus, instance.Status) {
-			// update the Status of the resource with the special client.Status()-client (nothing happens when you don't use the sub-client):
-			err = r.client.Status().Update(ctx, instance)
-			panicOnError(err)
-			r.recorder.Eventf(instance, eventTypeNormal, "PubSubMessage", "Remote status update received: need to reconcile local endpoints.")
+	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byte, string) {
+	return func(dataJson []byte, from string) {
+		// Unmarshal data
+		freshData := map[string][]mcv1.PeerService{}
+		err := json.Unmarshal(dataJson, &freshData)
+		if err != nil {
+			return
+		}
+
+		// Merge fresh data into previous state
+		data := map[string][]mcv1.PeerService{}
+		instance := &mcv1.ServiceSync{}
+		err = r.client.Get(context.Background(), name, instance)
+		data = instance.Status.PeerServices
+		for _, cluster := range append(keys(data), keys(freshData)...) {
+			if services, hasCluster := freshData[cluster]; hasCluster {
+				data[cluster] = services
+			}
+		}
+
+		// Save
+		err = r.ensureRemoteStatus(name, data)
+		if err != nil {
+			r.recorder.Eventf(instance, eventTypeWarning, "FailureEnsuring", fmt.Sprintf("Failed to ensure remote state: %v", err))
 		} else {
-			reqLogger.Info("Status idential, nothing to do")
+			r.recorder.Eventf(instance, eventTypeNormal, "PubSubMessage", "Remote status update received: need to reconcile local endpoints.")
 		}
-	}()
+	}
+}
 
-	return reconcile.Result{}, nil
+func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, status map[string][]mcv1.PeerService) error {
+	ctx := context.Background()
+	instance := &mcv1.ServiceSync{}
 
-	// Worklist:
-	// - Define Services for each of the PeerServices in the status
-	// - Publish to PubSub
-	// Elsewhere:
-	// - Subscribe to PubSub & write to status
+	// Load latest state
+	err := r.client.Get(ctx, name, instance)
+	if err != nil {
+		return err
+	}
+	oldStatus := instance.Status.DeepCopy()
 
-	// // Define a new Pod object
-	// pod := newPodForCR(instance)
+	// Modify
+	instance.Status.SelectedServices = orElse(instance.Status.SelectedServices, make([]string, 0)).([]string)
+	instance.Status.PeerClusters = keys(status)
+	instance.Status.PeerServices = status
+	// Test: is this necessary? instance.Status.LastPublishTime = metav1.NewTime(time.Now())
 
-	// // Set ServiceSync instance as the owner and controller
-	// import "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	// if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-	// 	return reconcile.Result{}, err
-	// }
-
-	// // Check if this Pod already exists
-	// found := &corev1.Pod{}
-	// err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	// if err != nil && errors.IsNotFound(err) {
-	// 	reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-	// 	err = r.client.Create(context.TODO(), pod)
-	// 	if err != nil {
-	// 		return reconcile.Result{}, err
-	// 	}
-
-	// 	// Pod created successfully - don't requeue
-	// 	return reconcile.Result{}, nil
-	// } else if err != nil {
-	// 	return reconcile.Result{}, err
-	// }
-
-	// // Pod already exists - don't requeue
-	// reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-	return reconcile.Result{}, nil
+	// Patch if necessary
+	if !operatorStatusesEqual(*oldStatus, instance.Status) {
+		// update the Status of the resource with the special client.Status()-client (nothing happens when you don't use the sub-client):
+		err = r.client.Status().Update(ctx, instance)
+		if err == nil {
+			log.Info(fmt.Sprintf("Patched status of %s", name))
+		} else {
+			log.Info(fmt.Sprintf("Patching status of %s failed: %v", name, err))
+		}
+		return err
+	}
+	log.Info("Status identical, nothing to do")
+	return nil
 }
 
 func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) error {
@@ -429,6 +462,25 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 	return nil
 }
 
+func keys(m interface{}) []string {
+	mp, isMap := m.(map[string]interface{})
+	if !isMap {
+		return []string{}
+	}
+	keys := make([]string, 0, len(mp))
+	for key := range mp {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func orElse(a, b interface{}) interface{} {
+	if a == nil {
+		return b
+	}
+	return a
+}
+
 func ownerRefSS(sync *mcv1.ServiceSync) metav1.OwnerReference {
 	return metav1.OwnerReference{
 		APIVersion: sync.APIVersion,
@@ -470,9 +522,9 @@ func ownerRefS(sync *corev1.Service) metav1.OwnerReference {
 // 	}
 // }
 
-func endpointsForHostsAndPort(nodes *corev1.NodeList) []mcv1.PeerEndpoint {
-	var list = make([]mcv1.PeerEndpoint, len(nodes.Items))
-	for i, node := range nodes.Items {
+func endpointsForHostsAndPort(nodes []corev1.Node) []mcv1.PeerEndpoint {
+	var list = make([]mcv1.PeerEndpoint, len(nodes))
+	for i, node := range nodes {
 		for _, addr := range node.Status.Addresses {
 			switch addr.Type {
 			case corev1.NodeHostName:
@@ -483,30 +535,6 @@ func endpointsForHostsAndPort(nodes *corev1.NodeList) []mcv1.PeerEndpoint {
 		}
 	}
 	return list
-}
-
-func cloneWithClusterName(ps []mcv1.PeerService, name string) []mcv1.PeerService {
-	var cpy = make([]mcv1.PeerService, len(ps))
-	for i := range ps {
-		cpy[i] = mcv1.PeerService{
-			Cluster:     name,
-			ServiceName: ps[i].ServiceName,
-			Endpoints:   ps[i].Endpoints,
-			Ports:       ps[i].Ports,
-		}
-	}
-	return cpy
-}
-
-func updateStatusFromRemoteState(s *mcv1.ServiceSync, ps map[string][]mcv1.PeerService) {
-	clusters := make([]string, 0)
-	for cluster := range ps {
-		clusters = append(clusters, cluster)
-	}
-	s.Status.SelectedServices = make([]string, 0)
-	s.Status.PeerClusters = clusters
-	s.Status.PeerServices = ps
-	s.Status.LastPublishTime = metav1.NewTime(time.Now())
 }
 
 func patchFromRemoteState(ps map[string][]mcv1.PeerService) client.Patch {
