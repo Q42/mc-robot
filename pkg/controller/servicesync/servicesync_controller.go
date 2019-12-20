@@ -3,16 +3,11 @@ package servicesync
 import (
 	"context"
 	"encoding/json"
-	stderrors "errors"
 	"fmt"
-	"strings"
 	"time"
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"q42/mc-robot/pkg/datasource"
-
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,8 +30,6 @@ import (
 
 const (
 	controllerName   = "mc_robot"
-	clusterNameLabel = "ClusterName" // clusterv1.ClusterNameLabel (from "sigs.k8s.io/cluster-api/api/v1alpha3" = master)
-	gkeNodePoolLabel = "cloud.google.com/gke-nodepool"
 	eventTypeNormal  = "Normal"  // kubernetes supports values Normal & Warning
 	eventTypeWarning = "Warning" // kubernetes supports values Normal & Warning
 )
@@ -182,7 +175,7 @@ type ReconcileServiceSync struct {
 // and what is in the ServiceSync.Spec
 func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling ServiceSync")
+	reqLogger.Info(fmt.Sprintf("Reconciling ServiceSync '%s/%s'", request.Namespace, request.Name))
 	ctx := context.Background()
 
 	// Fetch the ServiceSync instance
@@ -198,12 +191,14 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
+	// Subscribe to PeerService changes from other clusters
 	r.es.Subscribe(request.NamespacedName.String(), r.callbackFor(request.NamespacedName))
 	err = r.ensurePeerServices(instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
+	// Get our PeerService's & publish to other clusters
 	sm, _ := r.getLocalServiceMap(instance)
 	if clusterName == "" {
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
@@ -221,86 +216,6 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	return reconcile.Result{}, nil
-}
-
-func (r *ReconcileServiceSync) getLocalNodeList() (map[string]bool, error) {
-	nodes := &corev1.NodeList{}
-	err := r.client.List(context.Background(), nodes)
-	if err != nil {
-		log.Error(err, "Error while reading NodeList")
-		return nil, err
-	}
-
-	schedulableMap := make(map[string]bool, len(nodes.Items))
-	for _, node := range nodes.Items {
-		schedulableMap[node.ObjectMeta.Name] = !node.Spec.Unschedulable
-	}
-	return schedulableMap, nil
-}
-
-func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv1.PeerService, error) {
-	log.Info(fmt.Sprintf("Computing ServiceMap for %s", sync.Name))
-	services := &corev1.ServiceList{}
-	selector, err := metav1.LabelSelectorAsSelector(&sync.Spec.Selector)
-	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
-		return nil, err
-	}
-	err = r.client.List(context.Background(), services, client.MatchingLabelsSelector{Selector: selector})
-	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
-		return nil, err
-	}
-
-	nodes, err := r.getNodes()
-	clusterName = getClusterName(nodes)
-	// log.Info(fmt.Sprintf("Node %#v", nodes.Items[0]))
-	peerServices := make([]mcv1.PeerService, 0)
-	for _, service := range services.Items {
-		ports := make([]mcv1.PeerPort, 0)
-		for _, port := range service.Spec.Ports {
-			if port.NodePort > 0 {
-				ports = append(ports, mcv1.PeerPort{
-					InternalPort: port.Port,
-					ExternalPort: port.NodePort,
-				})
-			}
-		}
-		if len(ports) > 0 {
-			peerServices = append(peerServices, mcv1.PeerService{
-				Cluster:     clusterName,
-				ServiceName: service.Name,
-				Endpoints:   endpointsForHostsAndPort(nodes),
-				Ports:       ports,
-			})
-		}
-	}
-	return peerServices, nil
-}
-
-func (r *ReconcileServiceSync) getNodes() ([]corev1.Node, error) {
-	nodes := &corev1.NodeList{}
-	err := r.client.List(context.Background(), nodes)
-	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
-		return nil, err
-	}
-	if len(nodes.Items) == 0 {
-		err = stderrors.New("No nodes found")
-		log.Error(err, "Error while reading NodeList")
-		return nil, err
-	}
-	return nodes.Items, nil
-}
-
-func (r *ReconcileServiceSync) getServiceSyncs() ([]mcv1.ServiceSync, error) {
-	syncs := &mcv1.ServiceSyncList{}
-	err := r.client.List(context.TODO(), syncs)
-	if err != nil {
-		log.Error(err, "Error while reading ServiceSyncs")
-		return nil, err
-	}
-	return syncs.Items, nil
 }
 
 // Build according to example custom EnqueueRequestsFromMapFunc:
@@ -433,53 +348,6 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 	return nil
 }
 
-func getClusterName(nodes []corev1.Node) string {
-	if len(nodes) == 0 {
-		return ""
-	}
-
-	node := nodes[0]
-	if node.Labels[clusterNameLabel] != "" {
-		return node.Labels[clusterNameLabel]
-	}
-	if node.ClusterName != "" {
-		return node.ClusterName
-	}
-
-	// Hack for clusters that don't have ClusterName as a label on the nodes (pre-1.15?)
-	if _, hasLabel := node.Labels[gkeNodePoolLabel]; hasLabel {
-		// Split/TrimPrefix:
-		// gke-mycluster-1-node-pool-1-b486c6b7-chm7
-		// pre^clusterName^postfix_____________^node-hash
-		prefix := "gke-"
-		postfix := "-" + node.Labels[gkeNodePoolLabel]
-		clusterName := strings.Split(strings.TrimPrefix(node.Name, prefix), postfix)[0]
-		log.Info(fmt.Sprintf("getClusterName: used a hack to determine the clusterName from hostname %s", node.Name))
-		return clusterName
-	}
-	log.Info(fmt.Sprintf("getClusterName from %#v", node))
-	panic("ClusterName could not be determined")
-}
-
-func keys(m interface{}) []string {
-	mp, isMap := m.(map[string]interface{})
-	if !isMap {
-		return []string{}
-	}
-	keys := make([]string, 0, len(mp))
-	for key := range mp {
-		keys = append(keys, key)
-	}
-	return keys
-}
-
-func orElse(a, b interface{}) interface{} {
-	if a == nil {
-		return b
-	}
-	return a
-}
-
 func ownerRefSS(sync *mcv1.ServiceSync) metav1.OwnerReference {
 	return metav1.OwnerReference{
 		APIVersion: sync.APIVersion,
@@ -547,28 +415,4 @@ func serviceForPeer(peerService mcv1.PeerService, namespace string) (corev1.Serv
 	}
 
 	return service, endpoints
-}
-
-func panicOnError(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func operatorStatusesEqual(a, b mcv1.ServiceSyncStatus) bool {
-	conditionCmpOpts := []cmp.Option{
-		cmpopts.EquateEmpty(),
-		cmpopts.SortSlices(func(a, b mcv1.PeerService) bool { return strings.Compare(a.ServiceName, b.ServiceName) < 0 }),
-		cmpopts.SortSlices(func(a, b mcv1.PeerEndpoint) bool { return strings.Compare(a.IPAddress, b.IPAddress) < 0 }),
-		cmpopts.SortSlices(func(a, b string) bool { return strings.Compare(a, b) < 0 }),
-		cmpopts.IgnoreFields(mcv1.ServiceSyncStatus{}, "LastPublishTime"),
-	}
-	if !cmp.Equal(a, b, conditionCmpOpts...) {
-		// For debugging [operatorStatusesEqual], uncomment the following:
-		// if diff := cmp.Diff(a, b, conditionCmpOpts...); diff != "" {
-		// 	log.Info(fmt.Sprintf("Diff mismatch (-want +got):\n%s", diff))
-		// }
-		return false
-	}
-	return true
 }
