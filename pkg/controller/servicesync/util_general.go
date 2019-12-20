@@ -6,6 +6,12 @@ func panicOnError(err error) {
 	}
 }
 
+func logOnError(err error, msg string) {
+	if err != nil {
+		log.Error(err, msg)
+	}
+}
+
 func keys(m interface{}) []string {
 	mp, isMap := m.(map[string]interface{})
 	if !isMap {

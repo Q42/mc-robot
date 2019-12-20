@@ -2,6 +2,7 @@ package servicesync
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,7 +13,32 @@ const (
 	gkeNodePoolLabel = "cloud.google.com/gke-nodepool"
 )
 
+// getClusterName retrieves the name of the cluster by sampling the nodes
+// if the CLUSTER_NAME environment variable is set, it will use that instead
+func (r *ReconcileServiceSync) getClusterName() string {
+	if clusterName != "" {
+		return clusterName
+	}
+
+	if os.Getenv("CLUSTER_NAME") != "" {
+		clusterName = os.Getenv("CLUSTER_NAME")
+		return clusterName
+	}
+
+	nodes, err := r.getNodes()
+	logOnError(err, "Failed to get nodes for getClusterName")
+	clusterName = getClusterName(nodes)
+	return clusterName
+}
+
+// getClusterName retrieves the name of the cluster by sampling the nodes
+// if the CLUSTER_NAME environment variable is set, it will use that instead
 func getClusterName(nodes []corev1.Node) string {
+	if os.Getenv("CLUSTER_NAME") != "" {
+		clusterName = os.Getenv("CLUSTER_NAME")
+		return clusterName
+	}
+
 	if len(nodes) == 0 {
 		return ""
 	}

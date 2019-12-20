@@ -41,7 +41,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 	}
 
 	nodes, err := r.getNodes()
-	clusterName = getClusterName(nodes)
+	clusterName = r.getClusterName()
 	// log.Info(fmt.Sprintf("Node %#v", nodes.Items[0]))
 	peerServices := make([]mcv1.PeerService, 0)
 	for _, service := range services.Items {

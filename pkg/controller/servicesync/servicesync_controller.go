@@ -29,9 +29,10 @@ import (
 )
 
 const (
-	controllerName   = "mc_robot"
-	eventTypeNormal  = "Normal"  // kubernetes supports values Normal & Warning
-	eventTypeWarning = "Warning" // kubernetes supports values Normal & Warning
+	controllerName        = "mc_robot"
+	eventTypeNormal       = "Normal"  // kubernetes supports values Normal & Warning
+	eventTypeWarning      = "Warning" // kubernetes supports values Normal & Warning
+	broadcastRequestTopic = "broadcastRequest"
 )
 
 var log = logf.Log.WithName("controller_servicesync")
@@ -155,8 +156,23 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// Watch for broadcast requests
+	reconciler.es.Subscribe(broadcastRequestTopic, func(data []byte, sender string) {
+		if sender == reconciler.getClusterName() {
+			return // ignore our own broadcasts
+		}
+		syncs, err := reconciler.getServiceSyncs()
+		logOnError(err, "Failed to get ServiceSyncs")
+		for _, sync := range syncs {
+			_, err := reconciler.publish(&sync)
+			logOnError(err, "Failed to broadcast ServiceSyncs")
+		}
+	})
+
 	return nil
 }
+
+var hasRequestedBroadcastOnce = false
 
 // blank assignment to verify that ReconcileServiceSync implements reconcile.Reconciler
 var _ reconcile.Reconciler = &ReconcileServiceSync{}
@@ -178,6 +194,12 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	reqLogger.Info(fmt.Sprintf("Reconciling ServiceSync '%s/%s'", request.Namespace, request.Name))
 	ctx := context.Background()
 
+	if !hasRequestedBroadcastOnce {
+		hasRequestedBroadcastOnce = true
+		// Broadcast after coming online
+		r.es.Publish(broadcastRequestTopic, []byte{}, r.getClusterName())
+	}
+
 	// Fetch the ServiceSync instance
 	instance := &mcv1.ServiceSync{}
 	err := r.client.Get(ctx, request.NamespacedName, instance)
@@ -192,30 +214,41 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	// Subscribe to PeerService changes from other clusters
-	r.es.Subscribe(request.NamespacedName.String(), r.callbackFor(request.NamespacedName))
+	r.es.Subscribe(topic(instance), r.callbackFor(request.NamespacedName))
 	err = r.ensurePeerServices(instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Get our PeerService's & publish to other clusters
-	sm, _ := r.getLocalServiceMap(instance)
-	if clusterName == "" {
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
-	}
-
+	// Publish our PeerService's to other clusters
 	if instance.Status.LastPublishTime.IsZero() || instance.Status.LastPublishTime.Add(5*time.Minute).Before(time.Now()) {
 		// published too long ago (or never), so publish!
-		jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: sm})
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		r.es.Publish(request.NamespacedName.String(), jsonData, clusterName)
-		// then reschedule reconcile after 5 minutes again
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+		res, err := r.publish(instance)
+		return res, err
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
+	sm, _ := r.getLocalServiceMap(instance)
+	clusterName := r.getClusterName()
+	if clusterName == "" {
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, errors.NewInternalError(nil)
+	}
+
+	jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: sm})
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	r.es.Publish(topic(instance), jsonData, clusterName)
+	// then reschedule reconcile after 5 minutes again
+	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+func topic(instance *mcv1.ServiceSync) string {
+	return fmt.Sprintf("%s-%s", instance.Namespace, instance.Name)
 }
 
 // Build according to example custom EnqueueRequestsFromMapFunc:
@@ -238,12 +271,18 @@ func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []rec
 	return reqs
 }
 
+// This callback parses and then writes the data of remote PeerServices to our cluster, using ensureRemoteStatus
 func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byte, string) {
 	return func(dataJson []byte, from string) {
+		if from == r.getClusterName() {
+			return
+		}
+
 		// Unmarshal data
 		freshData := map[string][]mcv1.PeerService{}
 		err := json.Unmarshal(dataJson, &freshData)
 		if err != nil {
+			log.Error(err, fmt.Sprintf("Can not unmarshal JSON from '%s'", from))
 			return
 		}
 
@@ -268,6 +307,7 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 	}
 }
 
+// Writing the remote status to the local ServiceSync.Status object
 func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, status map[string][]mcv1.PeerService) error {
 	ctx := context.Background()
 	instance := &mcv1.ServiceSync{}
@@ -300,6 +340,7 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	return nil
 }
 
+// This takes the existing ServiceSync.Status and creates the Service's and Endpoints for the remote clusters
 func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) error {
 	existingServices := &corev1.ServiceList{}
 	err := r.client.List(context.Background(), existingServices)

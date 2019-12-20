@@ -1,3 +1,6 @@
+// +build mock
+
+// Package datasource defines here a Mock for the PubSub datasource for local testing
 package datasource
 
 import (
@@ -7,6 +10,8 @@ import (
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 )
+
+const broadcastRequestTopic = "broadcastRequest"
 
 type pubSubDatasource struct {
 }
@@ -24,10 +29,17 @@ func (*pubSubDatasource) Unsubscribe(topic string) {
 }
 
 func (*pubSubDatasource) Publish(topic string, jsonData []byte, source string) {
+	if topic == broadcastRequestTopic {
+		return
+	}
+
 	cb := savedCb
 	if cb != nil {
 		data := map[string][]mcv1.PeerService{}
-		_ = json.Unmarshal(jsonData, &data)
+		err := json.Unmarshal(jsonData, &data)
+		if err != nil {
+			return
+		}
 		go func() {
 			time.Sleep(5 * time.Second)
 			publishImpersonating(data[source], "other-cluster-2")
