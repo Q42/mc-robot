@@ -446,9 +446,13 @@ func getClusterName(nodes []corev1.Node) string {
 		return node.ClusterName
 	}
 
+	// Hack for clusters that don't have ClusterName as a label on the nodes (pre-1.15?)
 	if _, hasLabel := node.Labels[gkeNodePoolLabel]; hasLabel {
-		postfix := "-" + node.Labels[gkeNodePoolLabel]
+		// Split/TrimPrefix:
+		// gke-mycluster-1-node-pool-1-b486c6b7-chm7
+		// pre^clusterName^postfix_____________^node-hash
 		prefix := "gke-"
+		postfix := "-" + node.Labels[gkeNodePoolLabel]
 		clusterName := strings.Split(strings.TrimPrefix(node.Name, prefix), postfix)[0]
 		log.Info(fmt.Sprintf("getClusterName: used a hack to determine the clusterName from hostname %s", node.Name))
 		return clusterName
