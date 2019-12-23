@@ -48,6 +48,9 @@ type ServiceSyncStatus struct {
 	// Which endpoints did we receive from those clusters?
 	PeerServices map[string][]PeerService `json:"peerServices"`
 
+	// When did we last hear from the peer?
+	PeerLastHeardFrom map[string]metav1.Time `json:"peerLastHeardFrom"`
+
 	// Last time the data was published
 	LastPublishTime metav1.Time `json:"lastPublishTime"`
 

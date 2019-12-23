@@ -287,6 +287,20 @@ func schema_pkg_apis_mc_v1_ServiceSyncStatus(ref common.ReferenceCallback) commo
 							},
 						},
 					},
+					"peerLastHeardFrom": {
+						SchemaProps: spec.SchemaProps{
+							Description: "When did we last hear from the peer?",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+									},
+								},
+							},
+						},
+					},
 					"lastPublishTime": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Last time the data was published",
@@ -301,7 +315,7 @@ func schema_pkg_apis_mc_v1_ServiceSyncStatus(ref common.ReferenceCallback) commo
 						},
 					},
 				},
-				Required: []string{"selectedServices", "peerClusters", "peerServices", "lastPublishTime", "lastPublishHash"},
+				Required: []string{"selectedServices", "peerClusters", "peerServices", "peerLastHeardFrom", "lastPublishTime", "lastPublishHash"},
 			},
 		},
 		Dependencies: []string{

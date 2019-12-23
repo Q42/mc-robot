@@ -114,6 +114,12 @@ spec:
               items:
                 type: string
               type: array
+            peerLastHeardFrom:
+              additionalProperties:
+                format: date-time
+                type: string
+              description: When did we last hear from the peer?
+              type: object
             peerServices:
               description: Which endpoints did we receive from those clusters?
             selectedServices:
@@ -125,6 +131,7 @@ spec:
           - lastPublishHash
           - lastPublishTime
           - peerClusters
+          - peerLastHeardFrom
           - peerServices
           - selectedServices
           type: object

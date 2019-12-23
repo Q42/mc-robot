@@ -281,18 +281,29 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		}
 
 		// Merge fresh data into previous state
-		data := map[string][]mcv1.PeerService{}
+		status := mcv1.ServiceSyncStatus{}
 		instance := &mcv1.ServiceSync{}
 		err = r.client.Get(context.Background(), name, instance)
-		data = instance.Status.PeerServices
-		for _, cluster := range append(keys(data), keys(freshData)...) {
+		status.PeerServices = instance.Status.PeerServices
+		status.PeerLastHeardFrom = instance.Status.PeerLastHeardFrom
+
+		if status.PeerServices == nil {
+			status.PeerServices = make(map[string][]mcv1.PeerService, 0)
+		}
+
+		if status.PeerLastHeardFrom == nil {
+			status.PeerLastHeardFrom = make(map[string]metav1.Time, 0)
+		}
+
+		for _, cluster := range append(keys(status.PeerServices), keys(freshData)...) {
 			if services, hasCluster := freshData[cluster]; hasCluster {
-				data[cluster] = services
+				status.PeerServices[cluster] = services
+				status.PeerLastHeardFrom[cluster] = metav1.NewTime(time.Now())
 			}
 		}
 
 		// Save
-		err = r.ensureRemoteStatus(name, data)
+		err = r.ensureRemoteStatus(name, status)
 		if err != nil {
 			r.recorder.Eventf(instance, eventTypeWarning, "FailureEnsuring", fmt.Sprintf("Failed to ensure remote state: %v", err))
 		} else {
@@ -302,7 +313,7 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 }
 
 // Writing the remote status to the local ServiceSync.Status object
-func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, status map[string][]mcv1.PeerService) error {
+func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, status mcv1.ServiceSyncStatus) error {
 	ctx := context.Background()
 	instance := &mcv1.ServiceSync{}
 
@@ -315,8 +326,9 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 
 	// Modify
 	instance.Status.SelectedServices = orElse(instance.Status.SelectedServices, make([]string, 0)).([]string)
-	instance.Status.PeerClusters = keys(status)
-	instance.Status.PeerServices = status
+	instance.Status.PeerClusters = keys(status.PeerServices)
+	instance.Status.PeerServices = status.PeerServices
+	instance.Status.PeerLastHeardFrom = status.PeerLastHeardFrom
 	// Test: is this necessary? instance.Status.LastPublishTime = metav1.NewTime(time.Now())
 
 	// Patch if necessary

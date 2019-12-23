@@ -5,6 +5,7 @@
 package v1
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -182,6 +183,13 @@ func (in *ServiceSyncStatus) DeepCopyInto(out *ServiceSyncStatus) {
 				}
 			}
 			(*out)[key] = outVal
+		}
+	}
+	if in.PeerLastHeardFrom != nil {
+		in, out := &in.PeerLastHeardFrom, &out.PeerLastHeardFrom
+		*out = make(map[string]metav1.Time, len(*in))
+		for key, val := range *in {
+			(*out)[key] = *val.DeepCopy()
 		}
 	}
 	in.LastPublishTime.DeepCopyInto(&out.LastPublishTime)
