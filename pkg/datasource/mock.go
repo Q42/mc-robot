@@ -63,7 +63,7 @@ func publishImpersonating(ps []mcv1.PeerService, name string) {
 }
 
 // New creates a fresh PubSub datasource
-func New() ExternalSource {
+func New(_ Provider) ExternalSource {
 	return &pubSubDatasource{}
 }
 

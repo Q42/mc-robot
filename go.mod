@@ -3,6 +3,7 @@ module q42/mc-robot
 go 1.13
 
 require (
+	cloud.google.com/go v0.39.0
 	github.com/go-openapi/spec v0.19.0
 	github.com/google/go-cmp v0.3.0
 	github.com/operator-framework/operator-sdk v0.12.0

@@ -29,10 +29,10 @@ import (
 )
 
 const (
-	controllerName        = "mc_robot"
-	eventTypeNormal       = "Normal"  // kubernetes supports values Normal & Warning
-	eventTypeWarning      = "Warning" // kubernetes supports values Normal & Warning
-	broadcastRequestTopic = "broadcastRequest"
+	controllerName          = "mc_robot"
+	eventTypeNormal         = "Normal"  // kubernetes supports values Normal & Warning
+	eventTypeWarning        = "Warning" // kubernetes supports values Normal & Warning
+	broadcastRequestPayload = "broadcastRequest"
 )
 
 var log = logf.Log.WithName("controller_servicesync")
@@ -156,19 +156,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// Watch for broadcast requests
-	reconciler.es.Subscribe(broadcastRequestTopic, func(data []byte, sender string) {
-		if sender == reconciler.getClusterName() {
-			return // ignore our own broadcasts
-		}
-		syncs, err := reconciler.getServiceSyncs()
-		logOnError(err, "Failed to get ServiceSyncs")
-		for _, sync := range syncs {
-			_, err := reconciler.publish(&sync)
-			logOnError(err, "Failed to broadcast ServiceSyncs")
-		}
-	})
-
 	return nil
 }
 
@@ -194,12 +181,6 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	reqLogger.Info(fmt.Sprintf("Reconciling ServiceSync '%s/%s'", request.Namespace, request.Name))
 	ctx := context.Background()
 
-	if !hasRequestedBroadcastOnce {
-		hasRequestedBroadcastOnce = true
-		// Broadcast after coming online
-		r.es.Publish(broadcastRequestTopic, []byte{}, r.getClusterName())
-	}
-
 	// Fetch the ServiceSync instance
 	instance := &mcv1.ServiceSync{}
 	err := r.client.Get(ctx, request.NamespacedName, instance)
@@ -213,8 +194,14 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
+	// Broadcast once after coming online
+	if !hasRequestedBroadcastOnce {
+		hasRequestedBroadcastOnce = true
+		r.es.Publish(instance.Spec.TopicURL, []byte(broadcastRequestPayload), r.getClusterName())
+	}
+
 	// Subscribe to PeerService changes from other clusters
-	r.es.Subscribe(topic(instance), r.callbackFor(request.NamespacedName))
+	r.es.Subscribe(instance.Spec.TopicURL, r.callbackFor(request.NamespacedName))
 	err = r.ensurePeerServices(instance)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -242,13 +229,11 @@ func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	r.es.Publish(topic(instance), jsonData, clusterName)
-	// then reschedule reconcile after 5 minutes again
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-}
+	r.es.Publish(instance.Spec.TopicURL, jsonData, clusterName)
+	err = r.updatePublishTime(instance)
 
-func topic(instance *mcv1.ServiceSync) string {
-	return fmt.Sprintf("%s-%s", instance.Namespace, instance.Name)
+	// then reschedule reconcile after 5 minutes again
+	return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
 }
 
 // Build according to example custom EnqueueRequestsFromMapFunc:
@@ -275,6 +260,15 @@ func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []rec
 func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byte, string) {
 	return func(dataJson []byte, from string) {
 		if from == r.getClusterName() {
+			return
+		}
+
+		// Handle broadcast requests
+		if string(dataJson) == broadcastRequestPayload {
+			sync := &mcv1.ServiceSync{}
+			err := r.client.Get(context.Background(), name, sync)
+			_, err = r.publish(sync)
+			logOnError(err, "Failed to broadcast ServiceSyncs")
 			return
 		}
 
@@ -338,6 +332,11 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	}
 	log.Info("Status identical, nothing to do")
 	return nil
+}
+
+func (r *ReconcileServiceSync) updatePublishTime(instance *mcv1.ServiceSync) error {
+	instance.Status.LastPublishTime = metav1.NewTime(time.Now())
+	return r.client.Status().Update(context.Background(), instance)
 }
 
 // This takes the existing ServiceSync.Status and creates the Service's and Endpoints for the remote clusters

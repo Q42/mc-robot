@@ -14,6 +14,7 @@ import (
 	"q42/mc-robot/pkg/apis"
 	"q42/mc-robot/pkg/controller"
 	"q42/mc-robot/pkg/datasource"
+	"q42/mc-robot/pkg/datasourcegoogle"
 	"q42/mc-robot/version"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
@@ -111,7 +112,7 @@ func main() {
 	}
 
 	// Setup datasource
-	ds := datasource.New()
+	ds := datasource.New(datasourcegoogle.Google)
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr, ds); err != nil {

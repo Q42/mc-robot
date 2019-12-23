@@ -7,140 +7,165 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-
-	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
+	"strings"
+	"time"
 
 	"gocloud.dev/pubsub"
-	_ "gocloud.dev/pubsub/gcppubsub"
 )
 
-var project = os.Getenv("PROJECT")
+type callback = func(jsonData []byte, source string)
 
-type datasourceSub struct {
-	Sub *pubsub.Subscription
-	Cb  func(jsonData []byte, source string)
+// TopicSettings defines the strings that need to be send to the pubsub implementation
+type TopicSettings interface {
+	TopicURL() string
+	SubscriptionURL() string
 }
-
-type datasourcePublish struct {
-	Data     []byte
-	Metadata map[string]string
-}
-
-var topics = make(map[string]chan datasourcePublish, 0)
-var topicSubscriptions = make(map[string]datasourceSub, 0)
-
-const broadcastRequestTopic = "broadcastRequest"
 
 type pubSubDatasource struct {
+	topics                        map[string]*pubsub.Topic
+	subscriptionTasks             map[string]chan callback
+	parseTopic                    func(url string) TopicSettings
+	ensurePubSubTopicSubscription func(settings TopicSettings) error
 }
 
 var _ ExternalSource = &pubSubDatasource{}
+var ctx = context.Background()
 
-func (p *pubSubDatasource) Subscribe(topic string, cb func(jsonData []byte, source string)) {
-	topic = fmt.Sprintf("gcppubsub://projects/%s/topics/%s", project, topic)
-	p.subscribe(topic, cb)
+func (p *pubSubDatasource) Subscribe(url string, cb func(jsonData []byte, source string)) {
+	setting := p.parseTopic(url)
+	sub := p.getSubscription(setting)
+	sub <- cb
 }
 
-func (*pubSubDatasource) subscribe(topic string, cb func(jsonData []byte, source string)) {
-	ctx := context.Background()
-	sub, hasSubscription := topicSubscriptions[topic]
-	if hasSubscription {
-		topicSubscriptions[topic] = datasourceSub{
-			Sub: sub.Sub,
-			Cb:  cb,
-		}
-	} else {
-		sub, err := pubsub.OpenSubscription(ctx, topic)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-		topicSubscriptions[topic] = datasourceSub{Sub: sub, Cb: cb}
-		go func() error {
-			top, err := pubsub.OpenSubscription(ctx, topic)
-			if err != nil {
-				return err
-			}
-			for {
-				msg, err := top.Receive(ctx)
-				topicSubscriptions[topic].Cb(msg.Body, msg.Metadata["sender"])
-				if err != nil {
-					log.Printf("Error in subscription: %v", err)
-					break
-				}
-			}
-			defer top.Shutdown(ctx)
-			return nil
-		}()
-	}
-}
-
-func (p *pubSubDatasource) Unsubscribe(topic string) {
-	topic = fmt.Sprintf("gcppubsub://projects/%s/topics/%s", project, topic)
-	p.unsubscribe(topic)
-}
-
-func (*pubSubDatasource) unsubscribe(topic string) {
-	sub, hasSubscription := topicSubscriptions[topic]
-	if hasSubscription {
-		sub.Sub.Shutdown(context.Background())
-	}
-	delete(topicSubscriptions, topic)
-}
-
-func (p *pubSubDatasource) Publish(topic string, jsonData []byte, source string) {
-	topic = fmt.Sprintf("gcppubsub://projects/%s/subscriptions/%s", project, topic)
-	p.publish(topic, jsonData, source)
-}
-
-func (*pubSubDatasource) publish(topic string, jsonData []byte, source string) {
-	if topic == broadcastRequestTopic {
+func (p *pubSubDatasource) Unsubscribe(url string) {
+	setting := p.parseTopic(url)
+	if currentTask, hasTask := p.subscriptionTasks[setting.TopicURL()]; hasTask {
+		currentTask <- nil
 		return
 	}
+	delete(p.subscriptionTasks, setting.TopicURL())
+}
 
-	ctx := context.Background()
-	dest, hasTopic := topics[topic]
-	if !hasTopic {
-		dest = make(chan datasourcePublish, 0)
-		topics[topic] = dest
-		go func() {
-			top, err := pubsub.OpenTopic(ctx, topic)
-			if err != nil {
-				log.Print(err)
-				return
+func (p *pubSubDatasource) Publish(url string, jsonData []byte, source string) {
+	setting := p.parseTopic(url)
+	top := p.getTopic(setting)
+send:
+	err := top.Send(ctx, &pubsub.Message{
+		Body:     jsonData,
+		Metadata: map[string]string{"sender": source},
+	})
+	if err != nil {
+		log.Printf("Error while publishing to %s: %v", setting.TopicURL(), err)
+		if strings.Contains(fmt.Sprint(err), "NotFound") {
+			err = p.ensurePubSubTopicSubscription(setting)
+			if err == nil {
+				time.Sleep(1 * time.Second)
+				goto send
 			}
-			for {
-				msg := <-dest
-				err := top.Send(ctx, &pubsub.Message{
-					Body:     msg.Data,
-					Metadata: msg.Metadata,
-				})
-				if err != nil {
-					break
-				}
-			}
-			defer top.Shutdown(ctx)
-		}()
+			log.Printf("Error while ensuring topic: %s", err)
+			panic(err)
+		}
+	}
+}
+
+func (p *pubSubDatasource) getTopic(setting TopicSettings) *pubsub.Topic {
+	// Return cached topic
+	if topic, hasTopic := p.topics[setting.TopicURL()]; hasTopic {
+		return topic
 	}
 
-	dest <- datasourcePublish{Data: jsonData, Metadata: map[string]string{"sender": source}}
+	// Open topic
+open:
+	top, err := pubsub.OpenTopic(ctx, setting.TopicURL())
+	if err != nil {
+		log.Printf("Error while opening topic: %s", err)
+		err = p.ensurePubSubTopicSubscription(setting)
+		if err == nil {
+			time.Sleep(1 * time.Second)
+			goto open
+		}
+		log.Printf("Error while ensuring topic: %s", err)
+		panic(err)
+	}
+	p.topics[setting.TopicURL()] = top
+	return top
+}
+
+func (p *pubSubDatasource) getSubscription(setting TopicSettings) chan callback {
+	// Subscribe only once: send existing
+	if currentTask, hasTask := p.subscriptionTasks[setting.TopicURL()]; hasTask {
+		return currentTask
+	}
+
+	// Setup goroutines & register callback channel
+	currentTask := make(chan callback, 1)
+	messages := make(chan *pubsub.Message, 0)
+	p.subscriptionTasks[setting.TopicURL()] = currentTask
+
+	// Goroutine that receives pubsub messages
+	go func() {
+		// Open subscription
+	open:
+		sub, err := pubsub.OpenSubscription(ctx, setting.SubscriptionURL())
+		if err != nil {
+			log.Printf("Error while opening subscription: %s", err)
+			err = p.recover(setting)
+			if err == nil {
+				goto open
+			}
+			log.Printf("Error while ensuring subscription: %s", err)
+			panic(err)
+		}
+		// Loop
+		for {
+			msg, err := sub.Receive(ctx)
+			if err != nil {
+				log.Printf("Error in subscription: %v", err)
+				err = p.recover(setting)
+				if err == nil {
+					goto open
+				}
+				continue
+			}
+			messages <- msg
+		}
+	}()
+
+	// Goroutine that delivers pubsub messages
+	go func() {
+		var cb callback
+		for {
+			select {
+			case newCb := <-currentTask:
+				if newCb == nil {
+					return
+				}
+				cb = newCb
+			case msg := <-messages:
+				cb(msg.Body, msg.Metadata["sender"])
+				msg.Ack()
+			}
+		}
+	}()
+
+	return currentTask
+}
+
+func (p *pubSubDatasource) recover(setting TopicSettings) error {
+	err := p.ensurePubSubTopicSubscription(setting)
+	if err == nil {
+		return nil
+	}
+	time.Sleep(1 * time.Second)
+	return err
 }
 
 // New creates a fresh PubSub datasource
-func New() ExternalSource {
-	return &pubSubDatasource{}
-}
-
-func cloneWithClusterName(ps []mcv1.PeerService, name string) []mcv1.PeerService {
-	var cpy = make([]mcv1.PeerService, len(ps))
-	for i := range ps {
-		cpy[i] = mcv1.PeerService{
-			Cluster:     name,
-			ServiceName: ps[i].ServiceName,
-			Endpoints:   ps[i].Endpoints,
-			Ports:       ps[i].Ports,
-		}
+func New(provider Provider) ExternalSource {
+	return &pubSubDatasource{
+		topics:                        make(map[string]*pubsub.Topic, 0),
+		subscriptionTasks:             make(map[string]chan callback, 0),
+		parseTopic:                    provider.ParseTopic,
+		ensurePubSubTopicSubscription: provider.EnsurePubSubTopicSubscription,
 	}
-	return cpy
 }
