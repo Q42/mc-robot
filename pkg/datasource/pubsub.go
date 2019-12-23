@@ -54,6 +54,7 @@ send:
 		Body:     jsonData,
 		Metadata: map[string]string{"sender": source},
 	})
+	metricPublishes.Inc()
 	if err != nil {
 		log.Printf("Error while publishing to %s: %v", setting.TopicURL(), err)
 		if strings.Contains(fmt.Sprint(err), "NotFound") {
@@ -128,6 +129,7 @@ func (p *pubSubDatasource) getSubscription(setting TopicSettings) chan callback 
 				continue
 			}
 			messages <- msg
+			metricReceives.Inc()
 		}
 	}()
 

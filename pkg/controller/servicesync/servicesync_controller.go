@@ -36,9 +36,8 @@ const (
 )
 
 var log = logf.Log.WithName("controller_servicesync")
-var remoteStatus = make(map[string][]mcv1.PeerService, 0)
-var pubSubTriggers = make(chan reconcile.Request, 0)
 var clusterName string
+var clusterLastUpdateTimes = make(map[string]time.Time, 0)
 
 // Add creates a new ServiceSync Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -156,6 +155,32 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	// Update a metric every 5s indicating how long ago the cluster configuration was received
+	go func() {
+		for {
+			var min time.Duration = -1
+			var max time.Duration = -1
+			if len(clusterLastUpdateTimes) > 0 {
+				for _, when := range clusterLastUpdateTimes {
+					delta := time.Now().Sub(when)
+					if min < 0 {
+						min = delta
+						max = delta
+					}
+					if delta < min {
+						min = delta
+					}
+					if max < delta {
+						max = delta
+					}
+				}
+				metricUpdateMinAge.Set(min.Seconds())
+				metricUpdateMaxAge.Set(max.Seconds())
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}()
+
 	return nil
 }
 
@@ -222,6 +247,8 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 
 func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
 	sm, _ := r.getLocalServiceMap(instance)
+	metricServicesExposed.Set(float64(len(sm)))
+
 	clusterName := r.getClusterName()
 	if clusterName == "" {
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, errors.NewInternalError(nil)
@@ -290,6 +317,7 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		status.Clusters = patchClusters(instance.Status.Clusters, keys(freshData), func(cluster mcv1.Cluster) mcv1.Cluster {
 			cluster.Services = freshData[cluster.Name]
 			cluster.LastUpdate = metav1.NewTime(time.Now())
+			clusterLastUpdateTimes[cluster.Name] = time.Now()
 			return cluster
 		})
 
@@ -365,6 +393,7 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 	}
 
 	// Configure all services
+	metricServicesConfigured.Set(float64(len(services)))
 	var multiError []error
 	for _, service := range services {
 		desiredService, desiredEndpoints := serviceForPeer(service, instance.GetNamespace())
