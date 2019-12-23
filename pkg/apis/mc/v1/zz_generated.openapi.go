@@ -11,12 +11,55 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
+		"./pkg/apis/mc/v1.Cluster":           schema_pkg_apis_mc_v1_Cluster(ref),
 		"./pkg/apis/mc/v1.PeerEndpoint":      schema_pkg_apis_mc_v1_PeerEndpoint(ref),
 		"./pkg/apis/mc/v1.PeerPort":          schema_pkg_apis_mc_v1_PeerPort(ref),
 		"./pkg/apis/mc/v1.PeerService":       schema_pkg_apis_mc_v1_PeerService(ref),
 		"./pkg/apis/mc/v1.ServiceSync":       schema_pkg_apis_mc_v1_ServiceSync(ref),
 		"./pkg/apis/mc/v1.ServiceSyncSpec":   schema_pkg_apis_mc_v1_ServiceSyncSpec(ref),
 		"./pkg/apis/mc/v1.ServiceSyncStatus": schema_pkg_apis_mc_v1_ServiceSyncStatus(ref),
+	}
+}
+
+func schema_pkg_apis_mc_v1_Cluster(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "Cluster represents a set of parameters of a cluster",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Which clusters are we receiving data from?",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"services": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Which endpoints did we receive from those clusters?",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("./pkg/apis/mc/v1.PeerService"),
+									},
+								},
+							},
+						},
+					},
+					"lastUpdate": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Last time the data was received (when remote) or published (when local)",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
+		Dependencies: []string{
+			"./pkg/apis/mc/v1.PeerService", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }
 
@@ -228,97 +271,28 @@ func schema_pkg_apis_mc_v1_ServiceSyncStatus(ref common.ReferenceCallback) commo
 				Description: "ServiceSyncStatus defines the observed state of ServiceSync",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
-					"selectedServices": {
+					"clusters": {
 						VendorExtensible: spec.VendorExtensible{
 							Extensions: spec.Extensions{
 								"x-kubernetes-list-type": "set",
 							},
 						},
 						SchemaProps: spec.SchemaProps{
-							Description: "Services that match the Selector & therefore will be published",
+							Description: "Data of all the clusters (including self)",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Type:   []string{"string"},
-										Format: "",
+										Ref: ref("./pkg/apis/mc/v1.Cluster"),
 									},
 								},
 							},
-						},
-					},
-					"peerClusters": {
-						VendorExtensible: spec.VendorExtensible{
-							Extensions: spec.Extensions{
-								"x-kubernetes-list-type": "set",
-							},
-						},
-						SchemaProps: spec.SchemaProps{
-							Description: "Which clusters are we receiving data from?",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Type:   []string{"string"},
-										Format: "",
-									},
-								},
-							},
-						},
-					},
-					"peerServices": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Which endpoints did we receive from those clusters?",
-							Type:        []string{"object"},
-							AdditionalProperties: &spec.SchemaOrBool{
-								Allows: true,
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Type: []string{"array"},
-										Items: &spec.SchemaOrArray{
-											Schema: &spec.Schema{
-												SchemaProps: spec.SchemaProps{
-													Ref: ref("./pkg/apis/mc/v1.PeerService"),
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-					"peerLastHeardFrom": {
-						SchemaProps: spec.SchemaProps{
-							Description: "When did we last hear from the peer?",
-							Type:        []string{"object"},
-							AdditionalProperties: &spec.SchemaOrBool{
-								Allows: true,
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
-									},
-								},
-							},
-						},
-					},
-					"lastPublishTime": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Last time the data was published",
-							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
-						},
-					},
-					"lastPublishHash": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Hash of the data transmitted last (to deduplicate)",
-							Type:        []string{"string"},
-							Format:      "",
 						},
 					},
 				},
-				Required: []string{"selectedServices", "peerClusters", "peerServices", "peerLastHeardFrom", "lastPublishTime", "lastPublishHash"},
 			},
 		},
 		Dependencies: []string{
-			"./pkg/apis/mc/v1.PeerService", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
+			"./pkg/apis/mc/v1.Cluster"},
 	}
 }

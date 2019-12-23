@@ -37,25 +37,21 @@ type ServiceSyncStatus struct {
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
 
-	// Services that match the Selector & therefore will be published
+	// Data of all the clusters (including self)
 	// +listType=set
-	SelectedServices []string `json:"selectedServices"`
+	// +optional
+	Clusters []Cluster `json:"clusters,omitempty"`
+}
 
+// Cluster represents a set of parameters of a cluster
+// +k8s:openapi-gen=true
+type Cluster struct {
 	// Which clusters are we receiving data from?
-	// +listType=set
-	PeerClusters []string `json:"peerClusters"`
-
+	Name string `json:"name"`
 	// Which endpoints did we receive from those clusters?
-	PeerServices map[string][]PeerService `json:"peerServices"`
-
-	// When did we last hear from the peer?
-	PeerLastHeardFrom map[string]metav1.Time `json:"peerLastHeardFrom"`
-
-	// Last time the data was published
-	LastPublishTime metav1.Time `json:"lastPublishTime"`
-
-	// Hash of the data transmitted last (to deduplicate)
-	LastPublishHash string `json:"lastPublishHash"`
+	Services []PeerService `json:"services,omitempty"`
+	// Last time the data was received (when remote) or published (when local)
+	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
 }
 
 // PeerService represents a Service in a remote cluster
