@@ -1,5 +1,7 @@
 package servicesync
 
+import "reflect"
+
 func panicOnError(err error) {
 	if err != nil {
 		panic(err)
@@ -13,13 +15,15 @@ func logOnError(err error, msg string) {
 }
 
 func keys(m interface{}) []string {
-	mp, isMap := m.(map[string]interface{})
-	if !isMap {
-		return []string{}
-	}
-	keys := make([]string, 0, len(mp))
-	for key := range mp {
-		keys = append(keys, key)
+	keys := make([]string, 0)
+	v := reflect.ValueOf(m)
+	switch v.Kind() {
+	case reflect.Map:
+		for _, k := range v.MapKeys() {
+			keys = append(keys, k.String())
+		}
+	default:
+		log.Error(nil, "Invalid value for keys(...)")
 	}
 	return keys
 }
