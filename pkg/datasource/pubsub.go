@@ -15,12 +15,6 @@ import (
 
 type callback = func(jsonData []byte, source string)
 
-// TopicSettings defines the strings that need to be send to the pubsub implementation
-type TopicSettings interface {
-	TopicURL() string
-	SubscriptionURL() string
-}
-
 type pubSubDatasource struct {
 	topics                        map[string]*pubsub.Topic
 	subscriptionTasks             map[string]chan callback

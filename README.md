@@ -57,7 +57,7 @@ account, and which has access to that topic
 
 ### 2.1 Testing locally
 ```bash
-$ OPERATOR_NAME=mc-robot operator-sdk up local --namespace=default
+$ GOFLAGS="-tags=mock" OPERATOR_NAME=mc-robot operator-sdk up local --namespace=default
 ```
 
 ### 2.2 Generated code
