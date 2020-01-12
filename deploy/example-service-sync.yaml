@@ -1,0 +1,10 @@
+apiVersion: mc.q42.nl/v1
+kind: ServiceSync
+metadata:
+  name: example-servicesync
+spec:
+  topicURL: "gcppubsub://projects/myproject/topics/mytopic"
+  selector:
+    matchLabels:
+      app: my-app
+  endpointsPublishMax: 10

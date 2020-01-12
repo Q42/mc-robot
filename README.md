@@ -20,16 +20,15 @@ First install the CRD. Then build the operator & deploy it:
 kubectl apply -f deploy/crds/mc.q42.nl_servicesyncs_crd.yaml
 
 # Build operator
+export VERSION=v1.0.0
 export REGISTRY=quay.io/<user> # or gcr.io/project
-operator-sdk build $REGISTRY/mc-robot:v1.0.0
-sed -i "s|REPLACE_IMAGE|$REGISTRY/mc-robot:v1.0.0|g" deploy/operator.yaml
-docker push $REGISTRY/mc-robot:v1.0.0
+operator-sdk build $REGISTRY/mc-robot:$VERSION
+docker push $REGISTRY/mc-robot:$VERSION
 
 # Deploy operator
-kubectl create -f deploy/service_account.yaml
-kubectl create -f deploy/role.yaml
-kubectl create -f deploy/role_binding.yaml
-kubectl create -f deploy/operator.yaml
+kubectl apply -f deploy/rbac.yaml
+kubectl create secret mc-robot-credentials --from-file="serviceaccount.json=serviceaccount.json"
+sed "s|REPLACE_IMAGE|$REGISTRY/mc-robot:$VERSION|g" deploy/operator.yaml | kubectl apply -f -
 ```
 
 Create a ServiceSync object like this:
