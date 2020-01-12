@@ -155,6 +155,11 @@ func (in *ServiceSyncList) DeepCopyObject() runtime.Object {
 func (in *ServiceSyncSpec) DeepCopyInto(out *ServiceSyncSpec) {
 	*out = *in
 	in.Selector.DeepCopyInto(&out.Selector)
+	if in.EndpointsPublishPreferLoadBalancerIPs != nil {
+		in, out := &in.EndpointsPublishPreferLoadBalancerIPs, &out.EndpointsPublishPreferLoadBalancerIPs
+		*out = new(bool)
+		**out = **in
+	}
 	if in.EndpointsPublishMax != nil {
 		in, out := &in.EndpointsPublishMax, &out.EndpointsPublishMax
 		*out = new(int32)

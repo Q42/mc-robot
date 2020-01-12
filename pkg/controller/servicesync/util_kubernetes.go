@@ -55,7 +55,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 			}
 		}
 		// Load-Balancer service
-		if len(service.Status.LoadBalancer.Ingress) > 0 && len(ports) > 0 {
+		if len(ports) > 0 && len(service.Status.LoadBalancer.Ingress) > 0 && shouldPublishLB(sync) {
 			peerServices = append(peerServices, mcv1.PeerService{
 				Cluster:     clusterName,
 				ServiceName: service.Name,
@@ -99,4 +99,9 @@ func (r *ReconcileServiceSync) getServiceSyncs() ([]mcv1.ServiceSync, error) {
 		return nil, err
 	}
 	return syncs.Items, nil
+}
+
+func shouldPublishLB(sync *mcv1.ServiceSync) bool {
+	setting := sync.Spec.EndpointsPublishPreferLoadBalancerIPs
+	return setting != nil && *setting == true
 }

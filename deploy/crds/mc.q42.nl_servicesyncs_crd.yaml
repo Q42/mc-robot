@@ -48,6 +48,10 @@ spec:
                 e.g. setting it to 1 is not advisable.
               format: int32
               type: integer
+            endpointsPublishPreferLoadBalancerIPs:
+              description: Whether Load Balancer IPs must be published instead of
+                node ips if those are configured by the provider platform.
+              type: boolean
             selector:
               description: Label selector for services. Only the services matching
                 this selector will be published.

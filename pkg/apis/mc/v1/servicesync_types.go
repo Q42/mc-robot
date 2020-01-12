@@ -20,6 +20,9 @@ type ServiceSyncSpec struct {
 	// URL of the PubSub topic, specified as for example "gcppubsub://projects/myproject/topics/mytopic".
 	TopicURL string `json:"topicURL"`
 
+	// Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.
+	EndpointsPublishPreferLoadBalancerIPs *bool `json:"endpointsPublishPreferLoadBalancerIPs,omitempty"`
+
 	// How many endpoints to publish from this cluster (e.g. how many nodes should act as entry point).
 	// 0 is unlimited. Set this to a lower value if this cluster has a lot of nodes, and the amount of data to sync becomes prohibitive.
 	// Note that the limited set of nodes must be capable enough to accept the traffic and must be highly available, e.g. setting it to 1 is not advisable.
@@ -38,7 +41,8 @@ type ServiceSyncStatus struct {
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
 
 	// Data of all the clusters (including self)
-	// +listType=set
+	// +listType=map
+	// +listMapKey=name
 	// +optional
 	Clusters []Cluster `json:"clusters,omitempty"`
 }
@@ -49,6 +53,8 @@ type Cluster struct {
 	// Which clusters are we receiving data from?
 	Name string `json:"name"`
 	// Which endpoints did we receive from those clusters?
+	// +listType=map
+	// +listMapKey=serviceName
 	Services []PeerService `json:"services,omitempty"`
 	// Last time the data was received (when remote) or published (when local)
 	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`

@@ -36,6 +36,12 @@ func schema_pkg_apis_mc_v1_Cluster(ref common.ReferenceCallback) common.OpenAPID
 						},
 					},
 					"services": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-map-keys": "serviceName",
+								"x-kubernetes-list-type":     "map",
+							},
+						},
 						SchemaProps: spec.SchemaProps{
 							Description: "Which endpoints did we receive from those clusters?",
 							Type:        []string{"array"},
@@ -241,6 +247,13 @@ func schema_pkg_apis_mc_v1_ServiceSyncSpec(ref common.ReferenceCallback) common.
 							Format:      "",
 						},
 					},
+					"endpointsPublishPreferLoadBalancerIPs": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
 					"endpointsPublishMax": {
 						SchemaProps: spec.SchemaProps{
 							Description: "How many endpoints to publish from this cluster (e.g. how many nodes should act as entry point). 0 is unlimited. Set this to a lower value if this cluster has a lot of nodes, and the amount of data to sync becomes prohibitive. Note that the limited set of nodes must be capable enough to accept the traffic and must be highly available, e.g. setting it to 1 is not advisable.",
@@ -274,7 +287,8 @@ func schema_pkg_apis_mc_v1_ServiceSyncStatus(ref common.ReferenceCallback) commo
 					"clusters": {
 						VendorExtensible: spec.VendorExtensible{
 							Extensions: spec.Extensions{
-								"x-kubernetes-list-type": "set",
+								"x-kubernetes-list-map-keys": "name",
+								"x-kubernetes-list-type":     "map",
 							},
 						},
 						SchemaProps: spec.SchemaProps{
