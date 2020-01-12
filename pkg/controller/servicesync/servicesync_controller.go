@@ -234,9 +234,19 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	// Publish our PeerService's to other clusters
+	// Compute & Publish our PeerService's to other clusters
 	cluster := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == clusterName })
-	if cluster.LastUpdate.IsZero() || cluster.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
+	current, err := r.getLocalServiceMap(instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	hasChanged := !operatorPeerServicesEqual(cluster.Services, current)
+	if hasChanged || cluster.LastUpdate.IsZero() || cluster.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
+		instance.Status.Clusters = patchClusters(instance.Status.Clusters, []string{r.getClusterName()}, func(c mcv1.Cluster) mcv1.Cluster {
+			c.Services = current
+			return c
+		})
 		// published too long ago (or never), so publish!
 		res, err := r.publish(instance)
 		return res, err
@@ -246,7 +256,8 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 }
 
 func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
-	sm, _ := r.getLocalServiceMap(instance)
+	cluster := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == clusterName })
+	sm := cluster.Services
 	metricServicesExposed.Set(float64(len(sm)))
 
 	clusterName := r.getClusterName()
@@ -260,7 +271,7 @@ func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Re
 	}
 
 	r.es.Publish(instance.Spec.TopicURL, jsonData, clusterName)
-	err = r.updatePublishTime(instance)
+	err = r.updateAndSetPublishTime(instance)
 
 	// then reschedule reconcile after 5 minutes again
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
@@ -361,7 +372,7 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	return nil
 }
 
-func (r *ReconcileServiceSync) updatePublishTime(instance *mcv1.ServiceSync) error {
+func (r *ReconcileServiceSync) updateAndSetPublishTime(instance *mcv1.ServiceSync) error {
 	instance.Status.Clusters = patchClusters(instance.Status.Clusters, []string{r.getClusterName()}, func(c mcv1.Cluster) mcv1.Cluster {
 		c.LastUpdate = metav1.NewTime(time.Now())
 		return c
