@@ -54,6 +54,16 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 				})
 			}
 		}
+		// Load-Balancer service
+		if len(service.Status.LoadBalancer.Ingress) > 0 && len(ports) > 0 {
+			peerServices = append(peerServices, mcv1.PeerService{
+				Cluster:     clusterName,
+				ServiceName: service.Name,
+				Endpoints:   endpointsForIngresses(service.Status.LoadBalancer.Ingress),
+				Ports:       ports,
+			})
+		} else
+		// Regular ClusterIP/NodePort (non-loadbalancer) service
 		if len(ports) > 0 {
 			peerServices = append(peerServices, mcv1.PeerService{
 				Cluster:     clusterName,

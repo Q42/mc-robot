@@ -470,6 +470,15 @@ func endpointsForHostsAndPort(nodes []corev1.Node) []mcv1.PeerEndpoint {
 	return list
 }
 
+func endpointsForIngresses(ingresses []corev1.LoadBalancerIngress) []mcv1.PeerEndpoint {
+	var list = make([]mcv1.PeerEndpoint, len(ingresses))
+	for i, ingress := range ingresses {
+		list[i].Hostname = ingress.Hostname
+		list[i].IPAddress = ingress.IP
+	}
+	return list
+}
+
 // Builds up a Service & Endpoints as it should be created for the PeerService
 func serviceForPeer(peerService mcv1.PeerService, namespace string) (corev1.Service, corev1.Endpoints) {
 	serviceName := fmt.Sprintf("%s-%s", peerService.Cluster, peerService.ServiceName)
