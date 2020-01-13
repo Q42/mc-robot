@@ -34,6 +34,7 @@ const (
 	eventTypeNormal         = "Normal"  // kubernetes supports values Normal & Warning
 	eventTypeWarning        = "Warning" // kubernetes supports values Normal & Warning
 	broadcastRequestPayload = "broadcastRequest"
+	ownerReferenceUIDField  = "metadata.ownerReferences[].uid"
 )
 
 var log = logf.Log.WithName("controller_servicesync")
@@ -48,6 +49,15 @@ func Add(mgr manager.Manager, es datasource.ExternalSource) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager, es datasource.ExternalSource) reconcile.Reconciler {
+	// Adds ownerRefernce fieldIndexer
+	mgr.GetFieldIndexer().IndexField(&corev1.Service{}, ownerReferenceUIDField, func(o runtime.Object) []string {
+		var res = make([]string, 0)
+		for _, owner := range (o.(*corev1.Service)).OwnerReferences {
+			res = append(res, string(owner.UID))
+		}
+		return res
+	})
+
 	return &ReconcileServiceSync{
 		client:   mgr.GetClient(),
 		scheme:   mgr.GetScheme(),
@@ -114,7 +124,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 			// For any Service that a ServiceSync is the owner of, enqueue the owner ServiceSync
 			if ownerRef := metav1.GetControllerOf(a.Meta); ownerRef != nil {
-				log.Info(fmt.Sprintf("Service OwnerRef %#v", ownerRef))
+				log.Info(fmt.Sprintf("Service '%s' is owned by %s", service.Name, ownerRef.Name))
 				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
 					Name:      ownerRef.Name,
 					Namespace: a.Meta.GetNamespace(),
@@ -445,16 +455,20 @@ func (r *ReconcileServiceSync) updateAndSetPublishTime(instance *mcv1.ServiceSyn
 // This takes the existing ServiceSync.Status and creates the Service's and Endpoints for the remote clusters
 func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) error {
 	existingServices := &corev1.ServiceList{}
-	err := r.client.List(context.Background(), existingServices, client.MatchingFields{"metadata.controller": instance.Name})
+	err := r.client.List(context.Background(), existingServices, client.MatchingFields{ownerReferenceUIDField: string(instance.UID)})
 	if err != nil {
 		log.Error(err, "Error while computing ServiceMap")
 		return err
+	}
+	var preexistingServicesMap = make(map[string]corev1.Service, 0)
+	for _, service := range existingServices.Items {
+		preexistingServicesMap[service.ObjectMeta.Name] = service
 	}
 
 	// Collect all services that we need to configure
 	var services []mcv1.PeerService
 	for _, cluster := range instance.Status.Clusters {
-		if cluster.Name == r.getClusterName() {
+		if cluster.Name == "" || cluster.Name == r.getClusterName() {
 			continue
 		}
 		for _, service := range cluster.Services {
@@ -470,6 +484,7 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 	var multiError []error
 	for _, service := range services {
 		desiredService, desiredEndpoints := serviceForPeer(service, instance.GetNamespace())
+		delete(preexistingServicesMap, desiredService.ObjectMeta.Name)
 		currentService := &corev1.Service{}
 		currentEndpoints := &corev1.Endpoints{}
 		err := r.client.Get(context.Background(), types.NamespacedName{Name: desiredService.ObjectMeta.Name, Namespace: instance.GetNamespace()}, currentService)
@@ -502,12 +517,25 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 		}
 	}
 
+	// Any service that has not been ensured above & removed by the delete from preexistingServicesMap is extra and should be deleted
+	if len(preexistingServicesMap) > 0 {
+		log.Info(fmt.Sprintf("Remaining preexisting services: %v, now to be deleted", keys(preexistingServicesMap)))
+		for _, service := range preexistingServicesMap {
+			log.Info(fmt.Sprintf("Deleting service %s", service.ObjectMeta.Name))
+			err := r.client.Delete(context.Background(), &service)
+			if err != nil && !errors.IsNotFound(err) {
+				multiError = append(multiError, err)
+			}
+		}
+	}
+
 	if len(multiError) == 1 {
 		return multiError[0]
 	}
 	if len(multiError) > 0 {
 		return fmt.Errorf("Multiple errors during ensurePeerServices: %v", multiError)
 	}
+
 	return nil
 }
 
