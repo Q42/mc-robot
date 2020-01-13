@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
@@ -250,7 +251,7 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return res, err
 	}
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
@@ -364,16 +365,22 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 
 	// Diff & save optionally
 	hasChanged = !operatorPeerServicesEqual(selfStatus.Services, current.Services)
+	serviceNames := keys(current.Services)
+	sort.Strings(serviceNames)
+
 	if hasChanged {
-		log.Info(fmt.Sprintf("Local services (%s) changed, updating", keys(current.Services)))
+		log.Info(fmt.Sprintf("Local services (%s) changed, updating", serviceNames))
 		instance.Status.Clusters[clusterName].Services = current.Services
 		err = r.client.Status().Update(context.Background(), instance)
 		logOnError(err, "Error while updating local ServiceSync status")
 		if err != nil {
+			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status patch failed: %s", err))
 			return
 		}
+		r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status patched. Services: %v", serviceNames))
 	} else {
-		log.Info(fmt.Sprintf("Local services (%v) not changed", keys(current.Services)))
+		r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status identical, no action. Services: %v", serviceNames))
+		log.Info(fmt.Sprintf("Local services (%v) not changed", serviceNames))
 	}
 	return
 }
@@ -399,11 +406,14 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 		err = r.client.Status().Update(ctx, instance)
 		if err == nil {
 			log.Info(fmt.Sprintf("Patched status of %s", name))
+			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringRemoteStatus", "Remote status patched")
 		} else {
 			log.Info(fmt.Sprintf("Patching status of %s failed: %v", name, err))
+			r.recorder.Eventf(instance, eventTypeWarning, "EnsuringRemoteStatus", fmt.Sprintf("Remote status patch failed: %s", err))
 		}
 		return err
 	}
+	r.recorder.Eventf(instance, eventTypeNormal, "EnsuringRemoteStatus", "Remote status identical, no action")
 	log.Info("Status identical, nothing to do")
 	return nil
 }
