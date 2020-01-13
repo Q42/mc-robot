@@ -242,6 +242,7 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		reqLogger.Error(err, "ensureLocalStatus")
 		return reconcile.Result{}, err
 	}
+	instance.Status.Clusters[r.getClusterName()] = &selfStatus
 
 	// Publish our PeerService's to other clusters
 	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(interval(instance)).Before(time.Now()) {
@@ -333,19 +334,19 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		}
 
 		// Merge fresh data into previous state
-		status := mcv1.ServiceSyncStatus{}
-		instance := &mcv1.ServiceSync{}
-		err = r.client.Get(context.Background(), name, instance)
+		status := mcv1.ServiceSyncStatus{Clusters: make(map[string]*mcv1.Cluster, 0)}
 		for clusterName, peerServices := range freshData {
-			if instance.Status.Clusters[clusterName] == nil {
-				instance.Status.Clusters[clusterName] = &mcv1.Cluster{Name: clusterName}
+			if status.Clusters[clusterName] == nil {
+				status.Clusters[clusterName] = &mcv1.Cluster{Name: clusterName}
 			}
-			instance.Status.Clusters[clusterName].Services = peerServices
-			instance.Status.Clusters[clusterName].LastUpdate = metav1.NewTime(time.Now())
+			status.Clusters[clusterName].Services = peerServices
+			status.Clusters[clusterName].LastUpdate = metav1.NewTime(time.Now())
 			clusterLastUpdateTimes[clusterName] = time.Now()
 		}
 
 		// Save
+		instance := &mcv1.ServiceSync{}
+		_ = r.client.Get(context.Background(), name, instance)
 		err = r.ensureRemoteStatus(name, status)
 		if err != nil {
 			r.recorder.Eventf(instance, eventTypeWarning, "FailureEnsuring", fmt.Sprintf("Failed to ensure remote state: %v", err))
@@ -360,12 +361,10 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 	if instance.Status.Clusters == nil {
 		instance.Status.Clusters = make(map[string]*mcv1.Cluster, 0)
 	}
-
-	selfStatus := instance.Status.Clusters[clusterName]
-	if selfStatus == nil {
-		selfStatus = &mcv1.Cluster{Name: clusterName}
-		instance.Status.Clusters[clusterName] = selfStatus
+	if instance.Status.Clusters[clusterName] == nil {
+		instance.Status.Clusters[clusterName] = &mcv1.Cluster{Name: clusterName, Services: make(map[string]*mcv1.PeerService, 0)}
 	}
+	selfStatus := instance.Status.Clusters[clusterName]
 
 	// Compute current state
 	current.Name = r.getClusterName()
@@ -400,9 +399,9 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 // Writing the remote status to the local ServiceSync.Status object
 func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, status mcv1.ServiceSyncStatus) error {
 	ctx := context.Background()
-	instance := &mcv1.ServiceSync{}
 
 	// Load latest state
+	instance := &mcv1.ServiceSync{}
 	err := r.client.Get(ctx, name, instance)
 	if err != nil {
 		return err
