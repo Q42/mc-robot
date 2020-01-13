@@ -445,7 +445,7 @@ func (r *ReconcileServiceSync) updateAndSetPublishTime(instance *mcv1.ServiceSyn
 // This takes the existing ServiceSync.Status and creates the Service's and Endpoints for the remote clusters
 func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) error {
 	existingServices := &corev1.ServiceList{}
-	err := r.client.List(context.Background(), existingServices)
+	err := r.client.List(context.Background(), existingServices, client.MatchingFields{"metadata.controller": instance.Name})
 	if err != nil {
 		log.Error(err, "Error while computing ServiceMap")
 		return err
@@ -475,6 +475,7 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 		err := r.client.Get(context.Background(), types.NamespacedName{Name: desiredService.ObjectMeta.Name, Namespace: instance.GetNamespace()}, currentService)
 		if errors.IsNotFound(err) {
 			desiredService.SetOwnerReferences([]metav1.OwnerReference{ownerRefSS(instance)})
+			desiredService.SetAnnotations(map[string]string{"owner": instance.Name})
 			err = r.client.Create(context.Background(), &desiredService)
 			currentService = &desiredService
 		}
@@ -510,21 +511,26 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 	return nil
 }
 
+var boolTrue = true
+
 func ownerRefSS(sync *mcv1.ServiceSync) metav1.OwnerReference {
 	return metav1.OwnerReference{
-		APIVersion: sync.APIVersion,
-		Kind:       sync.Kind,
-		Name:       sync.GetName(),
-		UID:        sync.GetUID(),
+		APIVersion:         sync.APIVersion,
+		Kind:               sync.Kind,
+		Name:               sync.GetName(),
+		UID:                sync.GetUID(),
+		BlockOwnerDeletion: &boolTrue,
+		Controller:         &boolTrue,
 	}
 }
 
 func ownerRefS(sync *corev1.Service) metav1.OwnerReference {
 	return metav1.OwnerReference{
-		APIVersion: "core/v1",
-		Kind:       "Service",
-		Name:       sync.GetName(),
-		UID:        sync.GetUID(),
+		APIVersion:         "core/v1",
+		Kind:               "Service",
+		Name:               sync.GetName(),
+		UID:                sync.GetUID(),
+		BlockOwnerDeletion: &boolTrue,
 	}
 }
 
