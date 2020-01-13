@@ -381,8 +381,9 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 
 	if hasChanged {
 		log.Info(fmt.Sprintf("Local services (%s) changed, updating", serviceNames))
+		original := instance.DeepCopy()
 		instance.Status.Clusters[clusterName].Services = current.Services
-		err = r.client.Status().Update(context.Background(), instance)
+		err = r.client.Status().Patch(context.Background(), instance, client.MergeFrom(original))
 		logOnError(err, "Error while updating local ServiceSync status")
 		if err != nil {
 			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status patch failed: %s", err))
@@ -406,7 +407,7 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	if err != nil {
 		return err
 	}
-	oldStatus := instance.Status.DeepCopy()
+	originalInstance := instance.DeepCopy()
 
 	// Modify
 	instance.Status.Clusters = orElse(status.Clusters, make(map[string]*mcv1.Cluster, 0)).(map[string]*mcv1.Cluster)
@@ -418,9 +419,9 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	}
 
 	// Patch if necessary
-	if !operatorStatusesEqual(*oldStatus, instance.Status) {
+	if !operatorStatusesEqual(originalInstance.Status, instance.Status) {
 		// update the Status of the resource with the special client.Status()-client (nothing happens when you don't use the sub-client):
-		err = r.client.Status().Update(ctx, instance)
+		err = r.client.Status().Patch(ctx, instance, client.MergeFrom(originalInstance))
 		if err == nil {
 			log.Info(fmt.Sprintf("Patched status of %s", name))
 			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringRemoteStatus", "Remote status patched")
@@ -436,8 +437,9 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 }
 
 func (r *ReconcileServiceSync) updateAndSetPublishTime(instance *mcv1.ServiceSync) error {
+	original := instance.DeepCopy()
 	instance.Status.Clusters[r.getClusterName()].LastUpdate = metav1.NewTime(time.Now())
-	return r.client.Status().Update(context.Background(), instance)
+	return r.client.Status().Patch(context.Background(), instance, client.MergeFrom(original))
 }
 
 // This takes the existing ServiceSync.Status and creates the Service's and Endpoints for the remote clusters
