@@ -52,6 +52,12 @@ spec:
               description: Whether Load Balancer IPs must be published instead of
                 node ips if those are configured by the provider platform.
               type: boolean
+            prunePeerAtAge:
+              description: Age in seconds before removing a peer from the remote services.
+                Default is 0, which means never. Golang duration string. If used,
+                make sure to align the ReconcileInterval & PruneRemoteAtAge between
+                clusters while keeping safe margins.
+              type: string
             reconcileInterval:
               description: Publish & update interval in seconds, default 300 s = 5
                 minutes. Golang duration string.

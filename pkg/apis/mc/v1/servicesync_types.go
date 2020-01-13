@@ -25,6 +25,12 @@ type ServiceSyncSpec struct {
 	// +optional
 	ReconcileInterval string `json:"reconcileInterval"`
 
+	// Age in seconds before removing a peer from the remote services. Default is 0, which means never. Golang duration string.
+	// If used, make sure to align the ReconcileInterval & PruneRemoteAtAge between clusters while keeping safe margins.
+	// +default=0
+	// +optional
+	PrunePeerAtAge string `json:"prunePeerAtAge"`
+
 	// Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.
 	EndpointsPublishPreferLoadBalancerIPs *bool `json:"endpointsPublishPreferLoadBalancerIPs,omitempty"`
 

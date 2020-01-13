@@ -249,6 +249,13 @@ func schema_pkg_apis_mc_v1_ServiceSyncSpec(ref common.ReferenceCallback) common.
 							Format:      "",
 						},
 					},
+					"prunePeerAtAge": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Age in seconds before removing a peer from the remote services. Default is 0, which means never. Golang duration string. If used, make sure to align the ReconcileInterval & PruneRemoteAtAge between clusters while keeping safe margins.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"endpointsPublishPreferLoadBalancerIPs": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.",

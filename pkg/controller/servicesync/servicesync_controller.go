@@ -412,6 +412,12 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	// Modify
 	instance.Status.Clusters = orElse(status.Clusters, make(map[string]*mcv1.Cluster, 0)).(map[string]*mcv1.Cluster)
 
+	// Prune old/expired clusters
+	pruned := PruneExpired(&instance.Status.Clusters, instance.Spec.PrunePeerAtAge)
+	if len(pruned) > 0 {
+		r.recorder.Eventf(instance, eventTypeNormal, "PrunedClusters", fmt.Sprintf("Pruned remote clusters %s", pruned))
+	}
+
 	// Patch if necessary
 	if !operatorStatusesEqual(*oldStatus, instance.Status) {
 		// update the Status of the resource with the special client.Status()-client (nothing happens when you don't use the sub-client):
@@ -543,6 +549,20 @@ func endpointsForIngresses(ingresses []corev1.LoadBalancerIngress) []mcv1.PeerEn
 		list[i].IPAddress = ingress.IP
 	}
 	return list
+}
+
+// PruneExpired removes clusters from the list if they are LastUpdated too long ago
+func PruneExpired(clusters *map[string]*mcv1.Cluster, maxAgeStr string) (pruned []string) {
+	maxAge, err := time.ParseDuration(maxAgeStr)
+	if maxAgeStr != "" && err == nil && maxAge > 0 {
+		for clusterName, cluster := range *clusters {
+			if cluster.LastUpdate.Time.Before(time.Now().Add(-1 * maxAge)) {
+				delete(*clusters, clusterName)
+				pruned = append(pruned, clusterName)
+			}
+		}
+	}
+	return
 }
 
 // Builds up a Service & Endpoints as it should be created for the PeerService
