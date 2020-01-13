@@ -54,6 +54,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 				})
 			}
 		}
+
 		// Load-Balancer service
 		if len(ports) > 0 && len(service.Status.LoadBalancer.Ingress) > 0 && shouldPublishLB(sync) {
 			peerServices[service.Name] = &mcv1.PeerService{
@@ -71,6 +72,8 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 				Endpoints:   endpointsForHostsAndPort(nodes),
 				Ports:       ports,
 			}
+		} else {
+			log.Info(fmt.Sprintf("Skipping service %s with only non-NodePort ports", service.Name))
 		}
 	}
 	return peerServices, nil
