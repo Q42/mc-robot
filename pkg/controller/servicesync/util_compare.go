@@ -13,6 +13,7 @@ import (
 
 var conditionCmpOpts = []cmp.Option{
 	cmpopts.EquateEmpty(),
+	cmpopts.SortMaps(func(a, b string) bool { return strings.Compare(a, b) < 0 }),
 	cmpopts.SortSlices(func(a, b mcv1.Cluster) bool { return strings.Compare(a.Name, b.Name) < 0 }),
 	cmpopts.SortSlices(func(a, b mcv1.PeerService) bool { return strings.Compare(a.ServiceName, b.ServiceName) < 0 }),
 	cmpopts.SortSlices(func(a, b mcv1.PeerEndpoint) bool { return strings.Compare(a.IPAddress, b.IPAddress) < 0 }),
@@ -35,13 +36,14 @@ func operatorStatusesEqual(a, b mcv1.ServiceSyncStatus) bool {
 	return true
 }
 
-func operatorPeerServicesEqual(a, b map[string]*mcv1.PeerService) bool {
+func operatorPeerServicesEqual(a, b map[string]*mcv1.PeerService) (bool, string) {
 	if !cmp.Equal(a, b, conditionCmpOpts...) {
 		// For debugging [operatorStatusesEqual], uncomment the following:
-		// if diff := cmp.Diff(a, b, conditionCmpOpts...); diff != "" {
-		// 	log.Info(fmt.Sprintf("Diff mismatch (-want +got):\n%s", diff))
-		// }
-		return false
+		if diff := cmp.Diff(a, b, conditionCmpOpts...); diff != "" {
+			// log.Info(fmt.Sprintf("Diff mismatch (-want +got):\n%s", diff))
+			return false, diff
+		}
+		return false, ""
 	}
-	return true
+	return true, ""
 }

@@ -375,12 +375,13 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 	}
 
 	// Diff & save optionally
-	hasChanged = !operatorPeerServicesEqual(selfStatus.Services, current.Services)
+	isEqual, diff := operatorPeerServicesEqual(selfStatus.Services, current.Services)
+	hasChanged = !isEqual
 	serviceNames := keys(current.Services)
 	sort.Strings(serviceNames)
 
-	if hasChanged {
-		log.Info(fmt.Sprintf("Local services (%s) changed, updating", serviceNames))
+	if !isEqual {
+		log.Info(fmt.Sprintf("Local services (%s) changed, updating: %s", serviceNames, diff))
 		original := instance.DeepCopy()
 		instance.Status.Clusters[clusterName].Services = current.Services
 		err = r.client.Status().Patch(context.Background(), instance, client.MergeFrom(original))
