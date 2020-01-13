@@ -90,8 +90,9 @@ func ensurePubSubTopicSubscription(setting datasource.TopicSettings) error {
 	if !exists {
 		log.Printf("Creating subscription %s", subscriptionID)
 		_, err := client.CreateSubscription(ctx, subscriptionID, pubsub.SubscriptionConfig{
-			Topic:       client.Topic(topicID),
-			AckDeadline: 20 * time.Second,
+			Topic:            client.Topic(topicID),
+			AckDeadline:      20 * time.Second,
+			ExpirationPolicy: 25 * time.Hour,
 		})
 		if err != nil {
 			return err
