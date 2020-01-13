@@ -236,27 +236,16 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	// Compute our local services & save optionally
-	clusterName = r.getClusterName()
-	selfStatus := instance.Status.Clusters[clusterName]
-	current, err := r.getLocalServiceMap(instance)
+	selfStatus, hasChanged, err := r.ensureLocalStatus(instance)
 	if err != nil {
-		reqLogger.Error(err, "failure getting local map of shared services")
+		reqLogger.Error(err, "ensureLocalStatus")
 		return reconcile.Result{}, err
-	}
-
-	hasChanged := !operatorPeerServicesEqual(selfStatus.Services, current)
-	if hasChanged {
-		instance.Status.Clusters[clusterName].Services = current
-		err = r.client.Status().Update(context.Background(), instance)
-		logOnError(err, "Error while updating local ServiceSync status")
-		if err != nil {
-			return reconcile.Result{}, err
-		}
 	}
 
 	// Publish our PeerService's to other clusters
 	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
 		// published too long ago (or never), so publish!
+		reqLogger.Info("Publishing local services")
 		res, err := r.publish(instance)
 		return res, err
 	}
@@ -351,6 +340,42 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 			r.recorder.Eventf(instance, eventTypeNormal, "PubSubMessage", "Remote status update received: need to reconcile local endpoints.")
 		}
 	}
+}
+
+func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (current mcv1.Cluster, hasChanged bool, err error) {
+	// Collect previous state
+	if instance.Status.Clusters == nil {
+		instance.Status.Clusters = make(map[string]*mcv1.Cluster, 0)
+	}
+
+	selfStatus := instance.Status.Clusters[clusterName]
+	if selfStatus == nil {
+		selfStatus = &mcv1.Cluster{Name: clusterName}
+		instance.Status.Clusters[clusterName] = selfStatus
+	}
+
+	// Compute current state
+	current.Name = r.getClusterName()
+	current.LastUpdate = selfStatus.LastUpdate
+	current.Services, err = r.getLocalServiceMap(instance)
+	if err != nil {
+		return
+	}
+
+	// Diff & save optionally
+	hasChanged = !operatorPeerServicesEqual(selfStatus.Services, current.Services)
+	if hasChanged {
+		log.Info(fmt.Sprintf("Local services (%s) changed, updating", keys(current.Services)))
+		instance.Status.Clusters[clusterName].Services = current.Services
+		err = r.client.Status().Update(context.Background(), instance)
+		logOnError(err, "Error while updating local ServiceSync status")
+		if err != nil {
+			return
+		}
+	} else {
+		log.Info(fmt.Sprintf("Local services (%v) not changed", keys(current.Services)))
+	}
+	return
 }
 
 // Writing the remote status to the local ServiceSync.Status object
