@@ -235,18 +235,24 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	// Compute & Publish our PeerService's to other clusters
-	cluster := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == clusterName })
+	selfStatus := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == r.getClusterName() })
 	current, err := r.getLocalServiceMap(instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	hasChanged := !operatorPeerServicesEqual(cluster.Services, current)
-	if hasChanged || cluster.LastUpdate.IsZero() || cluster.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
+	hasChanged := !operatorPeerServicesEqual(selfStatus.Services, current)
+	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
 		instance.Status.Clusters = patchClusters(instance.Status.Clusters, []string{r.getClusterName()}, func(c mcv1.Cluster) mcv1.Cluster {
 			c.Services = current
 			return c
 		})
+
+		err = r.updateAndSetPublishTime(instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
 		// published too long ago (or never), so publish!
 		res, err := r.publish(instance)
 		return res, err
@@ -256,25 +262,23 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 }
 
 func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
-	cluster := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == clusterName })
-	sm := cluster.Services
-	metricServicesExposed.Set(float64(len(sm)))
-
 	clusterName := r.getClusterName()
+	cluster := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == clusterName })
+	metricServicesExposed.Set(float64(len(cluster.Services)))
+
 	if clusterName == "" {
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, errors.NewInternalError(nil)
 	}
 
-	jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: sm})
+	jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: cluster.Services})
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	r.es.Publish(instance.Spec.TopicURL, jsonData, clusterName)
-	err = r.updateAndSetPublishTime(instance)
 
 	// then reschedule reconcile after 5 minutes again
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, err
+	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 // Build according to example custom EnqueueRequestsFromMapFunc:
@@ -309,7 +313,9 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 			sync := &mcv1.ServiceSync{}
 			err := r.client.Get(context.Background(), name, sync)
 			_, err = r.publish(sync)
-			logOnError(err, "Failed to broadcast ServiceSyncs")
+			logOnError(err, "Failed to broadcast ServiceSync")
+			err = r.updateAndSetPublishTime(sync)
+			logOnError(err, "Failed to update ServiceSync")
 			return
 		}
 
