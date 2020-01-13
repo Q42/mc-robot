@@ -333,26 +333,21 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 			return
 		}
 
-		// Merge fresh data into previous state
-		status := mcv1.ServiceSyncStatus{Clusters: make(map[string]*mcv1.Cluster, 0)}
-		for clusterName, peerServices := range freshData {
-			if status.Clusters[clusterName] == nil {
-				status.Clusters[clusterName] = &mcv1.Cluster{Name: clusterName}
-			}
-			status.Clusters[clusterName].Services = peerServices
-			status.Clusters[clusterName].LastUpdate = metav1.NewTime(time.Now())
-			clusterLastUpdateTimes[clusterName] = time.Now()
+		if len(freshData) > 1 || len(freshData) < 1 {
+			log.Error(err, fmt.Sprintf("Weird state, expecting 1 cluster in JSON from '%s'", from))
+			return
+		}
+
+		clusterName := keys(freshData)[0]
+		cluster := mcv1.Cluster{
+			Name:       clusterName,
+			Services:   freshData[clusterName],
+			LastUpdate: metav1.NewTime(time.Now()),
 		}
 
 		// Save
-		instance := &mcv1.ServiceSync{}
-		_ = r.client.Get(context.Background(), name, instance)
-		err = r.ensureRemoteStatus(name, status)
-		if err != nil {
-			r.recorder.Eventf(instance, eventTypeWarning, "FailureEnsuring", fmt.Sprintf("Failed to ensure remote state: %v", err))
-		} else {
-			r.recorder.Eventf(instance, eventTypeNormal, "PubSubMessage", "Remote status update received: need to reconcile local endpoints.")
-		}
+		err = r.ensureRemoteStatus(name, cluster)
+		logOnError(err, "ensureRemoteStatus")
 	}
 }
 
@@ -399,7 +394,7 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 }
 
 // Writing the remote status to the local ServiceSync.Status object
-func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, status mcv1.ServiceSyncStatus) error {
+func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, cluster mcv1.Cluster) error {
 	ctx := context.Background()
 
 	// Load latest state
@@ -411,7 +406,10 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	originalInstance := instance.DeepCopy()
 
 	// Modify
-	instance.Status.Clusters = orElse(status.Clusters, make(map[string]*mcv1.Cluster, 0)).(map[string]*mcv1.Cluster)
+	if instance.Status.Clusters == nil {
+		instance.Status.Clusters = make(map[string]*mcv1.Cluster, 0)
+	}
+	instance.Status.Clusters[cluster.Name] = &cluster
 
 	// Prune old/expired clusters
 	pruned := PruneExpired(&instance.Status.Clusters, instance.Spec.PrunePeerAtAge)
