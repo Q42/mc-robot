@@ -107,8 +107,7 @@ spec:
           description: ServiceSyncStatus defines the observed state of ServiceSync
           properties:
             clusters:
-              description: Data of all the clusters (including self)
-              items:
+              additionalProperties:
                 description: Cluster represents a set of parameters of a cluster
                 properties:
                   lastUpdate:
@@ -120,8 +119,7 @@ spec:
                     description: Which clusters are we receiving data from?
                     type: string
                   services:
-                    description: Which endpoints did we receive from those clusters?
-                    items:
+                    additionalProperties:
                       description: PeerService represents a Service in a remote cluster
                       properties:
                         cluster:
@@ -164,11 +162,13 @@ spec:
                       - ports
                       - serviceName
                       type: object
-                    type: array
+                    description: Which endpoints did we receive from those clusters?
+                    type: object
                 required:
                 - name
                 type: object
-              type: array
+              description: Data of all the clusters (including self)
+              type: object
           type: object
       type: object
   version: v1

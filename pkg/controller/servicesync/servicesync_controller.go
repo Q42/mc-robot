@@ -235,7 +235,8 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	// Compute our local services & save optionally
-	selfStatus := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == r.getClusterName() })
+	clusterName = r.getClusterName()
+	selfStatus := instance.Status.Clusters[clusterName]
 	current, err := r.getLocalServiceMap(instance)
 	if err != nil {
 		reqLogger.Error(err, "failure getting local map of shared services")
@@ -244,10 +245,9 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 
 	hasChanged := !operatorPeerServicesEqual(selfStatus.Services, current)
 	if hasChanged {
-		instance.Status.Clusters = patchClusters(instance.Status.Clusters, []string{r.getClusterName()}, func(c mcv1.Cluster) mcv1.Cluster {
-			c.Services = current
-			return c
-		})
+		cluster := instance.Status.Clusters[clusterName]
+		cluster.Services = current
+		instance.Status.Clusters[clusterName] = cluster
 		err = r.client.Status().Update(context.Background(), instance)
 		logOnError(err, "Error while updating local ServiceSync status")
 		if err != nil {
@@ -267,14 +267,14 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 
 func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
 	clusterName := r.getClusterName()
-	cluster := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == clusterName })
+	cluster := instance.Status.Clusters[clusterName]
 	metricServicesExposed.Set(float64(len(cluster.Services)))
 
 	if clusterName == "" {
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, errors.NewInternalError(nil)
 	}
 
-	jsonData, err := json.Marshal(map[string][]mcv1.PeerService{clusterName: cluster.Services})
+	jsonData, err := json.Marshal(map[string]map[string]mcv1.PeerService{clusterName: cluster.Services})
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -324,7 +324,7 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		}
 
 		// Unmarshal data
-		freshData := map[string][]mcv1.PeerService{}
+		freshData := map[string]map[string]mcv1.PeerService{}
 		err := json.Unmarshal(dataJson, &freshData)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("Can not unmarshal JSON from '%s'", from))
@@ -335,12 +335,13 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		status := mcv1.ServiceSyncStatus{}
 		instance := &mcv1.ServiceSync{}
 		err = r.client.Get(context.Background(), name, instance)
-		status.Clusters = patchClusters(instance.Status.Clusters, keys(freshData), func(cluster mcv1.Cluster) mcv1.Cluster {
-			cluster.Services = freshData[cluster.Name]
+		for clusterName, peerServices := range freshData {
+			cluster := instance.Status.Clusters[clusterName]
+			cluster.Services = peerServices
 			cluster.LastUpdate = metav1.NewTime(time.Now())
 			clusterLastUpdateTimes[cluster.Name] = time.Now()
-			return cluster
-		})
+			instance.Status.Clusters[clusterName] = cluster
+		}
 
 		// Save
 		err = r.ensureRemoteStatus(name, status)
@@ -365,7 +366,7 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 	oldStatus := instance.Status.DeepCopy()
 
 	// Modify
-	instance.Status.Clusters = orElse(status.Clusters, make([]mcv1.Cluster, 0)).([]mcv1.Cluster)
+	instance.Status.Clusters = orElse(status.Clusters, make(map[string]mcv1.Cluster, 0)).(map[string]mcv1.Cluster)
 
 	// Patch if necessary
 	if !operatorStatusesEqual(*oldStatus, instance.Status) {
@@ -383,10 +384,9 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, sta
 }
 
 func (r *ReconcileServiceSync) updateAndSetPublishTime(instance *mcv1.ServiceSync) error {
-	instance.Status.Clusters = patchClusters(instance.Status.Clusters, []string{r.getClusterName()}, func(c mcv1.Cluster) mcv1.Cluster {
-		c.LastUpdate = metav1.NewTime(time.Now())
-		return c
-	})
+	cluster := instance.Status.Clusters[r.getClusterName()]
+	cluster.LastUpdate = metav1.NewTime(time.Now())
+	instance.Status.Clusters[r.getClusterName()] = cluster
 	return r.client.Status().Update(context.Background(), instance)
 }
 
@@ -539,7 +539,7 @@ func serviceForPeer(peerService mcv1.PeerService, namespace string) (corev1.Serv
 // Ensure that the array becomes up to date: patch-fn is called for every entry of keys.
 // If keys contains entries that don't exist in the array, the array will be updated to
 // include those clusters too.
-func patchClusters(clusters []mcv1.Cluster, keys []string, patch func(cluster mcv1.Cluster) mcv1.Cluster) []mcv1.Cluster {
+func patchClusters(clusters map[string]mcv1.Cluster, keys []string, patch func(cluster mcv1.Cluster) mcv1.Cluster) map[string]mcv1.Cluster {
 	toHandle := make(map[string]bool, 0)
 	for _, key := range keys {
 		toHandle[key] = true
@@ -552,17 +552,8 @@ func patchClusters(clusters []mcv1.Cluster, keys []string, patch func(cluster mc
 	}
 	for name, needsHandling := range toHandle {
 		if needsHandling {
-			clusters = append(clusters, patch(mcv1.Cluster{Name: name}))
+			clusters[name] = patch(mcv1.Cluster{Name: name})
 		}
 	}
 	return clusters
-}
-
-func selectCluster(clusters []mcv1.Cluster, selector func(cluster mcv1.Cluster) bool) mcv1.Cluster {
-	for _, c := range clusters {
-		if selector(c) {
-			return c
-		}
-	}
-	return mcv1.Cluster{}
 }

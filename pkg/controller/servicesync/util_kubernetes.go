@@ -26,7 +26,7 @@ func (r *ReconcileServiceSync) getLocalNodeList() (map[string]bool, error) {
 	return schedulableMap, nil
 }
 
-func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv1.PeerService, error) {
+func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[string]mcv1.PeerService, error) {
 	log.Info(fmt.Sprintf("Computing ServiceMap for %s", sync.Name))
 	services := &corev1.ServiceList{}
 	selector, err := metav1.LabelSelectorAsSelector(&sync.Spec.Selector)
@@ -43,7 +43,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 	nodes, err := r.getNodes()
 	clusterName = r.getClusterName()
 	// log.Info(fmt.Sprintf("Node %#v", nodes.Items[0]))
-	peerServices := make([]mcv1.PeerService, 0)
+	peerServices := make(map[string]mcv1.PeerService, 0)
 	for _, service := range services.Items {
 		ports := make([]mcv1.PeerPort, 0)
 		for _, port := range service.Spec.Ports {
@@ -56,21 +56,21 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) ([]mcv
 		}
 		// Load-Balancer service
 		if len(ports) > 0 && len(service.Status.LoadBalancer.Ingress) > 0 && shouldPublishLB(sync) {
-			peerServices = append(peerServices, mcv1.PeerService{
+			peerServices[service.Name] = mcv1.PeerService{
 				Cluster:     clusterName,
 				ServiceName: service.Name,
 				Endpoints:   endpointsForIngresses(service.Status.LoadBalancer.Ingress),
 				Ports:       ports,
-			})
+			}
 		} else
 		// Regular ClusterIP/NodePort (non-loadbalancer) service
 		if len(ports) > 0 {
-			peerServices = append(peerServices, mcv1.PeerService{
+			peerServices[service.Name] = mcv1.PeerService{
 				Cluster:     clusterName,
 				ServiceName: service.Name,
 				Endpoints:   endpointsForHostsAndPort(nodes),
 				Ports:       ports,
-			})
+			}
 		}
 	}
 	return peerServices, nil

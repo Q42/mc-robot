@@ -36,16 +36,11 @@ func schema_pkg_apis_mc_v1_Cluster(ref common.ReferenceCallback) common.OpenAPID
 						},
 					},
 					"services": {
-						VendorExtensible: spec.VendorExtensible{
-							Extensions: spec.Extensions{
-								"x-kubernetes-list-map-keys": "serviceName",
-								"x-kubernetes-list-type":     "map",
-							},
-						},
 						SchemaProps: spec.SchemaProps{
 							Description: "Which endpoints did we receive from those clusters?",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
 										Ref: ref("./pkg/apis/mc/v1.PeerService"),
@@ -285,16 +280,11 @@ func schema_pkg_apis_mc_v1_ServiceSyncStatus(ref common.ReferenceCallback) commo
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"clusters": {
-						VendorExtensible: spec.VendorExtensible{
-							Extensions: spec.Extensions{
-								"x-kubernetes-list-map-keys": "name",
-								"x-kubernetes-list-type":     "map",
-							},
-						},
 						SchemaProps: spec.SchemaProps{
 							Description: "Data of all the clusters (including self)",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
 										Ref: ref("./pkg/apis/mc/v1.Cluster"),
