@@ -244,14 +244,26 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	// Publish our PeerService's to other clusters
-	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
+	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(interval(instance)).Before(time.Now()) {
 		// published too long ago (or never), so publish!
 		reqLogger.Info("Publishing local services")
 		res, err := r.publish(instance)
 		return res, err
 	}
 
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	return reconcile.Result{RequeueAfter: time.Until(selfStatus.LastUpdate.Time.Add(interval(instance)))}, nil
+}
+
+func interval(instance *mcv1.ServiceSync) time.Duration {
+	reconcileIntervalString := instance.Spec.ReconcileInterval
+	if reconcileIntervalString == "" {
+		reconcileIntervalString = "300s"
+	}
+	interval, err := time.ParseDuration(instance.Spec.ReconcileInterval)
+	if err != nil {
+		return time.Second * 300
+	}
+	return interval
 }
 
 func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Result, error) {
@@ -260,7 +272,7 @@ func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Re
 	metricServicesExposed.Set(float64(len(cluster.Services)))
 
 	if clusterName == "" {
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, errors.NewInternalError(nil)
+		return reconcile.Result{RequeueAfter: interval(instance)}, errors.NewInternalError(nil)
 	}
 
 	jsonData, err := json.Marshal(map[string]map[string]*mcv1.PeerService{clusterName: cluster.Services})
@@ -273,7 +285,7 @@ func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Re
 	logOnError(err, "Failed to update time on ServiceSync")
 
 	// then reschedule reconcile after 5 minutes again
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	return reconcile.Result{RequeueAfter: interval(instance)}, nil
 }
 
 // Build according to example custom EnqueueRequestsFromMapFunc:

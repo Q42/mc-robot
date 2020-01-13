@@ -20,6 +20,11 @@ type ServiceSyncSpec struct {
 	// URL of the PubSub topic, specified as for example "gcppubsub://projects/myproject/topics/mytopic".
 	TopicURL string `json:"topicURL"`
 
+	// Publish & update interval in seconds, default 300 s = 5 minutes. Golang duration string.
+	// +default=300s
+	// +optional
+	ReconcileInterval string `json:"reconcileInterval"`
+
 	// Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.
 	EndpointsPublishPreferLoadBalancerIPs *bool `json:"endpointsPublishPreferLoadBalancerIPs,omitempty"`
 

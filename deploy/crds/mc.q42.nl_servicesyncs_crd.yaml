@@ -52,6 +52,10 @@ spec:
               description: Whether Load Balancer IPs must be published instead of
                 node ips if those are configured by the provider platform.
               type: boolean
+            reconcileInterval:
+              description: Publish & update interval in seconds, default 300 s = 5
+                minutes. Golang duration string.
+              type: string
             selector:
               description: Label selector for services. Only the services matching
                 this selector will be published.

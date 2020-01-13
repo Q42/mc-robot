@@ -242,6 +242,13 @@ func schema_pkg_apis_mc_v1_ServiceSyncSpec(ref common.ReferenceCallback) common.
 							Format:      "",
 						},
 					},
+					"reconcileInterval": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Publish & update interval in seconds, default 300 s = 5 minutes. Golang duration string.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"endpointsPublishPreferLoadBalancerIPs": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.",
