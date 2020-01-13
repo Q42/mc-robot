@@ -234,25 +234,29 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	// Compute & Publish our PeerService's to other clusters
+	// Compute our local services & save optionally
 	selfStatus := selectCluster(instance.Status.Clusters, func(c mcv1.Cluster) bool { return c.Name == r.getClusterName() })
 	current, err := r.getLocalServiceMap(instance)
 	if err != nil {
+		reqLogger.Error(err, "failure getting local map of shared services")
 		return reconcile.Result{}, err
 	}
 
 	hasChanged := !operatorPeerServicesEqual(selfStatus.Services, current)
-	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
+	if hasChanged {
 		instance.Status.Clusters = patchClusters(instance.Status.Clusters, []string{r.getClusterName()}, func(c mcv1.Cluster) mcv1.Cluster {
 			c.Services = current
 			return c
 		})
-
-		err = r.updateAndSetPublishTime(instance)
+		err = r.client.Status().Update(context.Background(), instance)
+		logOnError(err, "Error while updating local ServiceSync status")
 		if err != nil {
 			return reconcile.Result{}, err
 		}
+	}
 
+	// Publish our PeerService's to other clusters
+	if hasChanged || selfStatus.LastUpdate.IsZero() || selfStatus.LastUpdate.Add(5*time.Minute).Before(time.Now()) {
 		// published too long ago (or never), so publish!
 		res, err := r.publish(instance)
 		return res, err
@@ -276,6 +280,8 @@ func (r *ReconcileServiceSync) publish(instance *mcv1.ServiceSync) (reconcile.Re
 	}
 
 	r.es.Publish(instance.Spec.TopicURL, jsonData, clusterName)
+	err = r.updateAndSetPublishTime(instance)
+	logOnError(err, "Failed to update time on ServiceSync")
 
 	// then reschedule reconcile after 5 minutes again
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -314,8 +320,6 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 			err := r.client.Get(context.Background(), name, sync)
 			_, err = r.publish(sync)
 			logOnError(err, "Failed to broadcast ServiceSync")
-			err = r.updateAndSetPublishTime(sync)
-			logOnError(err, "Failed to update ServiceSync")
 			return
 		}
 
