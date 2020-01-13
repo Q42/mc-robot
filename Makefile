@@ -16,3 +16,12 @@ help:  ## Display this help
 .PHONY: test
 test: ## Run the script check-everything.sh which will check all
 	GO111MODULE=on TRACE=1 go test -v ./pkg/controller/servicesync/
+
+.PHONY: build
+build:
+	operator-sdk build $$REGISTRY/mc-robot:$$VERSION --verbose
+
+.PHONY: deploy
+deploy:
+	docker push $$REGISTRY/mc-robot:$$VERSION; \
+	sed "s|REPLACE_IMAGE|$$REGISTRY/mc-robot:$$VERSION|g" deploy/operator.yaml | kubectl apply -f -
