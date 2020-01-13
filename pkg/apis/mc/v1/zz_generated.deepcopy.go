@@ -13,9 +13,17 @@ func (in *Cluster) DeepCopyInto(out *Cluster) {
 	*out = *in
 	if in.Services != nil {
 		in, out := &in.Services, &out.Services
-		*out = make(map[string]PeerService, len(*in))
+		*out = make(map[string]*PeerService, len(*in))
 		for key, val := range *in {
-			(*out)[key] = *val.DeepCopy()
+			var outVal *PeerService
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				in, out := &val, &outVal
+				*out = new(PeerService)
+				(*in).DeepCopyInto(*out)
+			}
+			(*out)[key] = outVal
 		}
 	}
 	in.LastUpdate.DeepCopyInto(&out.LastUpdate)
@@ -188,9 +196,17 @@ func (in *ServiceSyncStatus) DeepCopyInto(out *ServiceSyncStatus) {
 	*out = *in
 	if in.Clusters != nil {
 		in, out := &in.Clusters, &out.Clusters
-		*out = make(map[string]Cluster, len(*in))
+		*out = make(map[string]*Cluster, len(*in))
 		for key, val := range *in {
-			(*out)[key] = *val.DeepCopy()
+			var outVal *Cluster
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				in, out := &val, &outVal
+				*out = new(Cluster)
+				(*in).DeepCopyInto(*out)
+			}
+			(*out)[key] = outVal
 		}
 	}
 	return

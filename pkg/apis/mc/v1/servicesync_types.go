@@ -42,7 +42,7 @@ type ServiceSyncStatus struct {
 
 	// Data of all the clusters (including self)
 	// +optional
-	Clusters map[string]Cluster `json:"clusters,omitempty"`
+	Clusters map[string]*Cluster `json:"clusters,omitempty"`
 }
 
 // Cluster represents a set of parameters of a cluster
@@ -51,7 +51,7 @@ type Cluster struct {
 	// Which clusters are we receiving data from?
 	Name string `json:"name"`
 	// Which endpoints did we receive from those clusters?
-	Services map[string]PeerService `json:"services,omitempty"`
+	Services map[string]*PeerService `json:"services,omitempty"`
 	// Last time the data was received (when remote) or published (when local)
 	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
 }

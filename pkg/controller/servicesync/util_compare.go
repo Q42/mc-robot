@@ -35,7 +35,7 @@ func operatorStatusesEqual(a, b mcv1.ServiceSyncStatus) bool {
 	return true
 }
 
-func operatorPeerServicesEqual(a, b map[string]mcv1.PeerService) bool {
+func operatorPeerServicesEqual(a, b map[string]*mcv1.PeerService) bool {
 	if !cmp.Equal(a, b, conditionCmpOpts...) {
 		// For debugging [operatorStatusesEqual], uncomment the following:
 		// if diff := cmp.Diff(a, b, conditionCmpOpts...); diff != "" {
