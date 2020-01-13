@@ -21,7 +21,12 @@ test: ## Run the script check-everything.sh which will check all
 build:
 	operator-sdk build $$REGISTRY/mc-robot:$$VERSION --verbose
 
+.PHONY: install
+install:
+	kubectl apply -f deploy/0_mc.q42.nl_servicesyncs_crd.yaml
+
 .PHONY: deploy
 deploy:
 	docker push $$REGISTRY/mc-robot:$$VERSION; \
-	sed "s|REPLACE_IMAGE|$$REGISTRY/mc-robot:$$VERSION|g" deploy/operator.yaml | kubectl apply -f -
+	kubectl apply -f deploy/1_rbac.yaml; \
+	sed "s|REPLACE_IMAGE|$$REGISTRY/mc-robot:$$VERSION|g" deploy/2_operator.yaml | kubectl apply -f -
