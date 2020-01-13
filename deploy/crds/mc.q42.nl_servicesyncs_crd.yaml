@@ -3,6 +3,13 @@ kind: CustomResourceDefinition
 metadata:
   name: servicesyncs.mc.q42.nl
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .spec.selector
+    name: Selector
+    type: string
+  - JSONPath: .status.peers
+    name: Peers
+    type: string
   group: mc.q42.nl
   names:
     kind: ServiceSync
@@ -118,6 +125,11 @@ spec:
           properties:
             clusters:
               description: Data of all the clusters (including self)
+            peers:
+              description: Which peers are available
+              items:
+                type: string
+              type: array
           type: object
       type: object
   version: v1

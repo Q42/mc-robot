@@ -54,6 +54,11 @@ type ServiceSyncStatus struct {
 	// Data of all the clusters (including self)
 	// +optional
 	Clusters map[string]*Cluster `json:"clusters,omitempty"`
+
+	// Which peers are available
+	// +listType=set
+	// +optional
+	Peers []string `json:"peers,omitempty"`
 }
 
 // Cluster represents a set of parameters of a cluster
@@ -98,6 +103,8 @@ type PeerPort struct {
 // +k8s:openapi-gen=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=servicesyncs,scope=Namespaced
+// +kubebuilder:printcolumn:name="Selector",type=string,JSONPath=`.spec.selector`
+// +kubebuilder:printcolumn:name="Peers",type=string,JSONPath=`.status.peers`
 type ServiceSync struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -410,6 +410,7 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, clu
 		instance.Status.Clusters = make(map[string]*mcv1.Cluster, 0)
 	}
 	instance.Status.Clusters[cluster.Name] = &cluster
+	instance.Status.Peers = filterOut(keys(instance.Status.Clusters), r.getClusterName())
 
 	// Prune old/expired clusters
 	pruned := PruneExpired(&instance.Status.Clusters, instance.Spec.PrunePeerAtAge)

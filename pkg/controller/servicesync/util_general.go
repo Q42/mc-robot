@@ -34,3 +34,13 @@ func orElse(a, b interface{}) interface{} {
 	}
 	return a
 }
+
+func filterOut(list []string, needle string) []string {
+	result := make([]string, 0)
+	for _, item := range list {
+		if item != needle {
+			result = append(result, needle)
+		}
+	}
+	return result
+}

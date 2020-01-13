@@ -209,6 +209,11 @@ func (in *ServiceSyncStatus) DeepCopyInto(out *ServiceSyncStatus) {
 			(*out)[key] = outVal
 		}
 	}
+	if in.Peers != nil {
+		in, out := &in.Peers, &out.Peers
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
