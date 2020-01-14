@@ -168,6 +168,11 @@ func (in *ServiceSyncSpec) DeepCopyInto(out *ServiceSyncSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EndpointsUseExternalIPs != nil {
+		in, out := &in.EndpointsUseExternalIPs, &out.EndpointsUseExternalIPs
+		*out = new(bool)
+		**out = **in
+	}
 	if in.EndpointsPublishMax != nil {
 		in, out := &in.EndpointsPublishMax, &out.EndpointsPublishMax
 		*out = new(int32)

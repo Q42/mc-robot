@@ -566,14 +566,16 @@ func ownerRefS(sync *corev1.Service) metav1.OwnerReference {
 	}
 }
 
-func endpointsForHostsAndPort(nodes []corev1.Node) []mcv1.PeerEndpoint {
+func endpointsForHostsAndPort(nodes []corev1.Node, useExternalIP bool) []mcv1.PeerEndpoint {
 	var list = make([]mcv1.PeerEndpoint, len(nodes))
 	for i, node := range nodes {
 		for _, addr := range node.Status.Addresses {
-			switch addr.Type {
-			case corev1.NodeHostName:
+			switch t := addr.Type; {
+			case t == corev1.NodeHostName:
 				list[i].Hostname = addr.Address
-			case corev1.NodeInternalIP:
+			case t == corev1.NodeInternalIP && !useExternalIP:
+				list[i].IPAddress = addr.Address
+			case t == corev1.NodeExternalIP && useExternalIP:
 				list[i].IPAddress = addr.Address
 			}
 		}

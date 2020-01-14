@@ -28,6 +28,10 @@ func (r *ReconcileServiceSync) getLocalNodeList() (map[string]bool, error) {
 
 func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[string]*mcv1.PeerService, error) {
 	log.Info(fmt.Sprintf("Computing ServiceMap for %s", sync.Name))
+
+	// Default is internal ips
+	useExternalIP := sync.Spec.EndpointsUseExternalIPs != nil && *sync.Spec.EndpointsUseExternalIPs == true
+
 	services := &corev1.ServiceList{}
 	selector, err := metav1.LabelSelectorAsSelector(&sync.Spec.Selector)
 	if err != nil {
@@ -46,11 +50,16 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 	peerServices := make(map[string]*mcv1.PeerService, 0)
 	for _, service := range services.Items {
 		ports := make([]mcv1.PeerPort, 0)
+		lbPorts := make([]mcv1.PeerPort, 0)
 		for _, port := range service.Spec.Ports {
 			if port.NodePort > 0 {
 				ports = append(ports, mcv1.PeerPort{
 					InternalPort: port.Port,
 					ExternalPort: port.NodePort,
+				})
+				lbPorts = append(ports, mcv1.PeerPort{
+					InternalPort: port.Port,
+					ExternalPort: port.Port, // load balancers expose the cluster-internal port
 				})
 			}
 		}
@@ -61,7 +70,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 				Cluster:     clusterName,
 				ServiceName: service.Name,
 				Endpoints:   endpointsForIngresses(service.Status.LoadBalancer.Ingress),
-				Ports:       ports,
+				Ports:       lbPorts,
 			}
 		} else
 		// Regular ClusterIP/NodePort (non-loadbalancer) service
@@ -69,7 +78,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 			peerServices[service.Name] = &mcv1.PeerService{
 				Cluster:     clusterName,
 				ServiceName: service.Name,
-				Endpoints:   endpointsForHostsAndPort(nodes),
+				Endpoints:   endpointsForHostsAndPort(nodes, useExternalIP),
 				Ports:       ports,
 			}
 		} else {

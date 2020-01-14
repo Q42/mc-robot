@@ -34,6 +34,10 @@ type ServiceSyncSpec struct {
 	// Whether Load Balancer IPs must be published instead of node ips if those are configured by the provider platform.
 	EndpointsPublishPreferLoadBalancerIPs *bool `json:"endpointsPublishPreferLoadBalancerIPs,omitempty"`
 
+	// Whether to use the external IP addresses of nodes, or use the internal IPs (the default).
+	// Use internal IPs if the clusters share a network.
+	EndpointsUseExternalIPs *bool `json:"endpointsUseExternalIPs,omitempty"`
+
 	// How many endpoints to publish from this cluster (e.g. how many nodes should act as entry point).
 	// 0 is unlimited. Set this to a lower value if this cluster has a lot of nodes, and the amount of data to sync becomes prohibitive.
 	// Note that the limited set of nodes must be capable enough to accept the traffic and must be highly available, e.g. setting it to 1 is not advisable.

@@ -5,13 +5,19 @@ The goal of this application is to make services in other clusters easily reacha
 The actions that are performed:
 1. retrieve a list of k8s nodes
 2. retrieve a list of k8s Services with a NodePort
-3. publish list of nodes & services via PubSub mechanism
+3. publish list of services via PubSub mechanism
+4. subscribe to list of services of peers via PubSub mechanism
 4. configure custom k8s Service & Endpoints pointing to services in other clusters
 
 This meets the goals because after this is done, you can reach other clusters with
 ```bash
 curl http://my-service-gke_my-project_europe-west4_my-cluster.default.svc.cluster.local
 ```
+
+MC Robot does not configure network topologies, so make sure to have all clusters can
+reach each other. Either have all clusters in the same shared network, or publish the
+external IPs of nodes by setting `endpointsUseExternalIPs: true` and configure the
+firewalls correctly.
 
 ## 1. Usage
 First install the CRD. Then build the operator & deploy it:

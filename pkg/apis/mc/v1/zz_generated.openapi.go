@@ -263,6 +263,13 @@ func schema_pkg_apis_mc_v1_ServiceSyncSpec(ref common.ReferenceCallback) common.
 							Format:      "",
 						},
 					},
+					"endpointsUseExternalIPs": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Whether to use the external IP addresses of nodes, or use the internal IPs (the default). Use internal IPs if the clusters share a network.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
 					"endpointsPublishMax": {
 						SchemaProps: spec.SchemaProps{
 							Description: "How many endpoints to publish from this cluster (e.g. how many nodes should act as entry point). 0 is unlimited. Set this to a lower value if this cluster has a lot of nodes, and the amount of data to sync becomes prohibitive. Note that the limited set of nodes must be capable enough to accept the traffic and must be highly available, e.g. setting it to 1 is not advisable.",
