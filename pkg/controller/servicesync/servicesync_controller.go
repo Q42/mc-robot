@@ -465,8 +465,8 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 		preexistingServicesMap[service.ObjectMeta.Name] = service
 	}
 
-	// Collect all services that we need to configure
-	var services []mcv1.PeerService
+	// Collect all peerServices that we need to configure
+	var peerServices []mcv1.PeerService
 	for _, cluster := range instance.Status.Clusters {
 		if cluster.Name == "" || cluster.Name == r.getClusterName() {
 			continue
@@ -475,15 +475,15 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 			if len(service.Ports) == 0 {
 				continue
 			}
-			services = append(services, *service)
+			peerServices = append(peerServices, *service)
 		}
 	}
 
-	// Configure all services
-	metricServicesConfigured.Set(float64(len(services)))
+	// Configure all peerServices
+	metricServicesConfigured.Set(float64(len(peerServices)))
 	var multiError []error
-	for _, service := range services {
-		desiredService, desiredEndpoints := serviceForPeer(service, instance.GetNamespace())
+	for _, peerService := range peerServices {
+		desiredService, desiredEndpoints := serviceForPeer(peerService, instance.GetNamespace())
 		delete(preexistingServicesMap, desiredService.ObjectMeta.Name)
 		currentService := &corev1.Service{}
 		currentEndpoints := &corev1.Endpoints{}
@@ -499,14 +499,18 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 			continue
 		}
 
+		// Upsert operation:
+		// try to get the resource...
 		err = r.client.Get(context.Background(), types.NamespacedName{
 			Name:      desiredService.ObjectMeta.Name,
 			Namespace: instance.GetNamespace(),
 		}, currentEndpoints)
+		// if that works, update,
 		if err == nil {
 			currentEndpoints.Subsets = desiredEndpoints.Subsets
 			err = r.client.Update(context.Background(), currentEndpoints)
 		}
+		// ... or else create it
 		if errors.IsNotFound(err) {
 			desiredEndpoints.SetOwnerReferences([]metav1.OwnerReference{ownerRefS(currentService), ownerRefSS(instance)})
 			err = r.client.Create(context.Background(), &desiredEndpoints)
