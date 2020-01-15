@@ -105,22 +105,22 @@ func (p *pubSubDatasource) getSubscription(setting TopicSettings) chan callback 
 	open:
 		sub, err := pubsub.OpenSubscription(ctx, setting.SubscriptionURL())
 		if err != nil {
-			log.Error(err, "Error while opening subscription")
 			err = p.recover(setting)
 			if err == nil {
 				goto open
 			}
-			log.Error(err, "Error while ensuring subscription")
+			log.Error(err, "Unrecoverable error while opening subscription")
 			panic(err)
 		}
 		// Loop
 		for {
 			msg, err := sub.Receive(ctx)
 			if err != nil {
-				log.Error(err, "Error in subscription")
 				err = p.recover(setting)
 				if err == nil {
 					goto open
+				} else {
+					log.Error(err, "Unrecoverable error in subscription")
 				}
 				continue
 			}

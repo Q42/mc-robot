@@ -59,9 +59,9 @@ func getClusterName(nodes []corev1.Node) string {
 		prefix := "gke-"
 		postfix := "-" + node.Labels[gkeNodePoolLabel]
 		clusterName := strings.Split(strings.TrimPrefix(node.Name, prefix), postfix)[0]
-		log.Info(fmt.Sprintf("getClusterName: used a hack to determine the clusterName from hostname %s", node.Name))
+		log.Info("getClusterName: used a hack to determine the clusterName from hostname", "hostname", node.Name, "clustername", clusterName)
 		return clusterName
 	}
-	log.Info(fmt.Sprintf("getClusterName from %#v", node))
+	log.Error(fmt.Errorf("Failed to getClusterName from %#v", node), "getClusterName failure")
 	panic("ClusterName could not be determined")
 }

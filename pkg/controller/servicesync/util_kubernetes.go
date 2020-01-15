@@ -4,7 +4,6 @@ import (
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"context"
 	stderrors "errors"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,7 +26,8 @@ func (r *ReconcileServiceSync) getLocalNodeList() (map[string]bool, error) {
 }
 
 func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[string]*mcv1.PeerService, error) {
-	log.Info(fmt.Sprintf("Computing ServiceMap for %s", sync.Name))
+	logger := log.WithValues("servicesync", sync.Name)
+	logger.Info("Computing ServiceMap")
 
 	// Default is internal ips
 	useExternalIP := sync.Spec.EndpointsUseExternalIPs != nil && *sync.Spec.EndpointsUseExternalIPs == true
@@ -35,18 +35,18 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 	services := &corev1.ServiceList{}
 	selector, err := metav1.LabelSelectorAsSelector(&sync.Spec.Selector)
 	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
+		logger.Error(err, "Error while computing ServiceMap")
 		return nil, err
 	}
 	err = r.client.List(context.Background(), services, client.MatchingLabelsSelector{Selector: selector})
 	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
+		logger.Error(err, "Error while computing ServiceMap")
 		return nil, err
 	}
 
 	nodes, err := r.getNodes()
 	clusterName = r.getClusterName()
-	// log.Info(fmt.Sprintf("Node %#v", nodes.Items[0]))
+
 	peerServices := make(map[string]*mcv1.PeerService, 0)
 	for _, service := range services.Items {
 		ports := make([]mcv1.PeerPort, 0)
@@ -82,7 +82,7 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 				Ports:       ports,
 			}
 		} else {
-			log.Info(fmt.Sprintf("Skipping service %s with only non-NodePort ports", service.Name))
+			logger.Info("Skipping service with only non-NodePort ports", "service", service.Name)
 		}
 	}
 	return peerServices, nil
@@ -91,12 +91,10 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 func (r *ReconcileServiceSync) getNodes() ([]corev1.Node, error) {
 	nodes := &corev1.NodeList{}
 	err := r.client.List(context.Background(), nodes)
-	if err != nil {
-		log.Error(err, "Error while computing ServiceMap")
-		return nil, err
-	}
-	if len(nodes.Items) == 0 {
+	if err == nil && len(nodes.Items) == 0 {
 		err = stderrors.New("No nodes found")
+	}
+	if err != nil {
 		log.Error(err, "Error while reading NodeList")
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package servicesync
 import (
 	"context"
 	"encoding/json"
+	coreErrors "errors"
 	"fmt"
 	"sort"
 	"time"
@@ -114,7 +115,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 			for _, sync := range syncs {
 				selector, err := metav1.LabelSelectorAsSelector(&sync.Spec.Selector)
 				if err == nil && selector.Matches(labels.Set(service.Labels)) {
-					log.Info(fmt.Sprintf("Service '%s' is elegible for ServiceSync '%s'", service.Name, sync.Name))
+					log.Info("Found elegible Service for ServiceSync", "service", service.Name, "servicesync", sync.Name)
 					requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
 						Name:      sync.GetName(),
 						Namespace: sync.GetNamespace(),
@@ -124,7 +125,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 			// For any Service that a ServiceSync is the owner of, enqueue the owner ServiceSync
 			if ownerRef := metav1.GetControllerOf(a.Meta); ownerRef != nil {
-				log.Info(fmt.Sprintf("Service '%s' is owned by %s", service.Name, ownerRef.Name))
+				log.Info("Found ServiceSync owned Service", "service", service.Name, "servicesync", ownerRef.Name)
 				requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
 					Name:      ownerRef.Name,
 					Namespace: a.Meta.GetNamespace(),
@@ -214,7 +215,7 @@ type ReconcileServiceSync struct {
 // and what is in the ServiceSync.Spec
 func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info(fmt.Sprintf("Reconciling ServiceSync '%s/%s'", request.Namespace, request.Name))
+	reqLogger.Info("Reconciling ServiceSync", "namespace", request.Namespace, "servicesync", request.Name)
 	ctx := context.Background()
 
 	clusterName := r.getClusterName()
@@ -325,6 +326,7 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		if from == r.getClusterName() {
 			return
 		}
+		logger := log.WithValues("sender", from)
 
 		// Handle broadcast requests
 		if string(dataJson) == broadcastRequestPayload {
@@ -339,12 +341,12 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		freshData := map[string]map[string]*mcv1.PeerService{}
 		err := json.Unmarshal(dataJson, &freshData)
 		if err != nil {
-			log.Error(err, fmt.Sprintf("Can not unmarshal JSON from '%s'", from))
+			logger.Error(err, "Got JSON from peer that could not be unmarshalled to PeerServices")
 			return
 		}
 
 		if len(freshData) > 1 || len(freshData) < 1 {
-			log.Error(err, fmt.Sprintf("Weird state, expecting 1 cluster in JSON from '%s'", from))
+			logger.Error(coreErrors.New("JSON map should contain 1 clusters information"), "Weird state, expecting 1 cluster in JSON from peer")
 			return
 		}
 
@@ -384,21 +386,23 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 	hasChanged = !isEqual
 	serviceNames := keys(current.Services)
 	sort.Strings(serviceNames)
+	logger := log.WithValues("serviceNames", serviceNames, "diff", diff, "servicesync", instance.Name)
 
 	if !isEqual {
-		log.Info(fmt.Sprintf("Local services (%s) changed, updating: %s", serviceNames, diff))
+		logger.Info("Local services changed, updating")
 		original := instance.DeepCopy()
 		instance.Status.Clusters[clusterName].Services = current.Services
 		err = r.client.Status().Patch(context.Background(), instance, client.MergeFrom(original))
-		logOnError(err, "Error while updating local ServiceSync status")
 		if err != nil {
-			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status patch failed: %s", err))
+			logger.Error(err, "Local status patch failed")
+			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", "Local status patch failed: %s", err)
 			return
 		}
-		r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status patched. Services: %v", serviceNames))
+		logger.Info("Local services patched")
+		r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", "Local status patched")
 	} else {
-		r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", fmt.Sprintf("Local status identical, no action. Services: %v", serviceNames))
-		log.Info(fmt.Sprintf("Local services (%v) not changed", serviceNames))
+		r.recorder.Eventf(instance, eventTypeNormal, "EnsuringLocalStatus", "Local status identical, no action")
+		logger.Info("Local status identical, no action")
 	}
 	return
 }
@@ -406,6 +410,7 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 // Writing the remote status to the local ServiceSync.Status object
 func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, cluster mcv1.Cluster) error {
 	ctx := context.Background()
+	logger := log.WithValues("servicesync", name.Name)
 
 	// Load latest state
 	instance := &mcv1.ServiceSync{}
@@ -425,7 +430,8 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, clu
 	// Prune old/expired clusters
 	pruned := PruneExpired(&instance.Status.Clusters, instance.Spec.PrunePeerAtAge)
 	if len(pruned) > 0 {
-		r.recorder.Eventf(instance, eventTypeNormal, "PrunedClusters", fmt.Sprintf("Pruned remote clusters %s", pruned))
+		logger.Info("Pruned remote clusters", "clusters", pruned)
+		r.recorder.Eventf(instance, eventTypeNormal, "PrunedClusters", "Pruned remote clusters %s", pruned)
 	}
 
 	// Patch if necessary
@@ -433,16 +439,16 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, clu
 		// update the Status of the resource with the special client.Status()-client (nothing happens when you don't use the sub-client):
 		err = r.client.Status().Patch(ctx, instance, client.MergeFrom(originalInstance))
 		if err == nil {
-			log.Info(fmt.Sprintf("Patched status of %s", name))
+			logger.Info("Patched ServiceSync status")
 			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringRemoteStatus", "Remote status patched")
 		} else {
-			log.Info(fmt.Sprintf("Patching status of %s failed: %v", name, err))
-			r.recorder.Eventf(instance, eventTypeWarning, "EnsuringRemoteStatus", fmt.Sprintf("Remote status patch failed: %s", err))
+			logger.V(400).Info("Patching status of ServiceSync failed", "error", err)
+			r.recorder.Eventf(instance, eventTypeWarning, "EnsuringRemoteStatus", "Remote status patch failed: %s", err)
 		}
 		return err
 	}
 	r.recorder.Eventf(instance, eventTypeNormal, "EnsuringRemoteStatus", "Remote status identical, no action")
-	log.Info("Status identical, nothing to do")
+	logger.Info("Status identical, nothing to do")
 	return nil
 }
 
@@ -523,9 +529,9 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 
 	// Any service that has not been ensured above & removed by the delete from preexistingServicesMap is extra and should be deleted
 	if len(preexistingServicesMap) > 0 {
-		log.Info(fmt.Sprintf("Remaining preexisting services: %v, now to be deleted", keys(preexistingServicesMap)))
+		log.Info("Found preexisting services, which will be delted now", "prunedservices", keys(preexistingServicesMap))
 		for _, service := range preexistingServicesMap {
-			log.Info(fmt.Sprintf("Deleting service %s", service.ObjectMeta.Name))
+			log.Info("Deleting service", "service", service.ObjectMeta.Name)
 			err := r.client.Delete(context.Background(), &service)
 			if err != nil && !errors.IsNotFound(err) {
 				multiError = append(multiError, err)

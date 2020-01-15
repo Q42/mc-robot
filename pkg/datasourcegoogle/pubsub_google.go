@@ -72,11 +72,11 @@ func ensurePubSubTopicSubscription(setting datasource.TopicSettings) error {
 	// Check if topic exists or create it
 	exists, err := client.Topic(topicID).Exists(ctx)
 	if err != nil {
-		log.Printf("Error checking if topic exists %s", err)
+		log.Error(err, "Error checking if topic exists", "topic", topicID)
 		return err
 	}
 	if !exists {
-		log.Printf("Creating topic %s", topicID)
+		log.Info("Creating topic", "topic", topicID)
 		_, err := client.CreateTopic(ctx, topicID)
 		if err != nil {
 			return err
@@ -86,11 +86,11 @@ func ensurePubSubTopicSubscription(setting datasource.TopicSettings) error {
 	// Check if subscription exists or create it
 	exists, err = client.Subscription(subscriptionID).Exists(ctx)
 	if err != nil {
-		log.Printf("Error checking if subscription exists %s", err)
+		log.Error(err, "Error checking if subscription exists", "topic", topicID, "subscription", subscriptionID)
 		return err
 	}
 	if !exists {
-		log.Printf("Creating subscription %s", subscriptionID)
+		log.Info("Creating subscription", "topic", topicID, "subscription", subscriptionID)
 		_, err := client.CreateSubscription(ctx, subscriptionID, pubsub.SubscriptionConfig{
 			Topic:            client.Topic(topicID),
 			AckDeadline:      20 * time.Second,
