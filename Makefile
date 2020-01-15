@@ -17,9 +17,20 @@ help:  ## Display this help
 test: ## Run the script check-everything.sh which will check all
 	GO111MODULE=on TRACE=1 go test -v ./pkg/controller/servicesync/
 
+##@ Build
+
+# [build] is a convenience method. Take a look at the implementation to know why ;)
+# Getting the /Users/you directory & the go module directory to be removed was a bit of a hassle,
+# for more info about trimpath: https://github.com/golang/go/commit/4891a3b66c482b42fdc74ae382e0cf4817d0fda2
 .PHONY: build
 build:
-	operator-sdk build $$REGISTRY/mc-robot:$$VERSION --verbose
+	echo "Building operator $$(dirname $$PWD);$$HOME"; \
+GOOS=linux CGO_ENABLED=0 go build -o build/_output/bin/mc-robot \
+-gcflags "all=-trimpath=$$(dirname $$PWD);$$HOME" \
+-asmflags "all=-trimpath=$$(dirname $$PWD);$$HOME" \
+-ldflags=-buildid= \
+q42/mc-robot/cmd/manager && \
+docker build -f build/Dockerfile -t $$REGISTRY/mc-robot:$$VERSION .
 
 .PHONY: install
 install:
@@ -28,5 +39,5 @@ install:
 .PHONY: deploy
 deploy:
 	docker push $$REGISTRY/mc-robot:$$VERSION; \
-	kubectl apply -f deploy/1_rbac.yaml; \
-	sed "s|REPLACE_IMAGE|$$REGISTRY/mc-robot:$$VERSION|g" deploy/2_operator.yaml | kubectl apply -f -
+kubectl apply -f deploy/1_rbac.yaml; \
+sed "s|REPLACE_IMAGE|$$REGISTRY/mc-robot:$$VERSION|g" deploy/2_operator.yaml | kubectl apply -f -
