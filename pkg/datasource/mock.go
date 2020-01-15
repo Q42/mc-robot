@@ -5,11 +5,14 @@ package datasource
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 
 	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
+
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+var log = logf.Log.WithName("pubsub")
 
 const broadcastRequestTopic = "broadcastRequest"
 

@@ -4,18 +4,20 @@ package datasourcegoogle
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"time"
 
 	"q42/mc-robot/pkg/datasource"
 
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
 	pubsub "cloud.google.com/go/pubsub"
 	// Include Google PubSub driver for PubSub
 	_ "gocloud.dev/pubsub/gcppubsub"
 )
 
+var log = logf.Log.WithName("pubsub")
 var ctx = context.Background()
 var clients map[string]*pubsub.Client = make(map[string]*pubsub.Client, 0)
 

@@ -6,12 +6,14 @@ package datasource
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"gocloud.dev/pubsub"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+var log = logf.Log.WithName("pubsub")
 
 type callback = func(jsonData []byte, source string)
 
@@ -50,14 +52,14 @@ send:
 	})
 	metricPublishes.Inc()
 	if err != nil {
-		log.Printf("Error while publishing to %s: %v", setting.TopicURL(), err)
+		log.Error(err, "Error while publishing to %s", setting.TopicURL())
 		if strings.Contains(fmt.Sprint(err), "NotFound") {
 			err = p.ensurePubSubTopicSubscription(setting)
 			if err == nil {
 				time.Sleep(1 * time.Second)
 				goto send
 			}
-			log.Printf("Error while ensuring topic: %s", err)
+			log.Error(err, "Error while ensuring topic")
 			panic(err)
 		}
 	}
@@ -73,13 +75,13 @@ func (p *pubSubDatasource) getTopic(setting TopicSettings) *pubsub.Topic {
 open:
 	top, err := pubsub.OpenTopic(ctx, setting.TopicURL())
 	if err != nil {
-		log.Printf("Error while opening topic: %s", err)
+		log.Error(err, "Error while opening topic")
 		err = p.ensurePubSubTopicSubscription(setting)
 		if err == nil {
 			time.Sleep(1 * time.Second)
 			goto open
 		}
-		log.Printf("Error while ensuring topic: %s", err)
+		log.Error(err, "Error while ensuring topic")
 		panic(err)
 	}
 	p.topics[setting.TopicURL()] = top
@@ -103,19 +105,19 @@ func (p *pubSubDatasource) getSubscription(setting TopicSettings) chan callback 
 	open:
 		sub, err := pubsub.OpenSubscription(ctx, setting.SubscriptionURL())
 		if err != nil {
-			log.Printf("Error while opening subscription: %s", err)
+			log.Error(err, "Error while opening subscription")
 			err = p.recover(setting)
 			if err == nil {
 				goto open
 			}
-			log.Printf("Error while ensuring subscription: %s", err)
+			log.Error(err, "Error while ensuring subscription")
 			panic(err)
 		}
 		// Loop
 		for {
 			msg, err := sub.Receive(ctx)
 			if err != nil {
-				log.Printf("Error in subscription: %v", err)
+				log.Error(err, "Error in subscription")
 				err = p.recover(setting)
 				if err == nil {
 					goto open
