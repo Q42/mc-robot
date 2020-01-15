@@ -4,13 +4,14 @@ go 1.13
 
 require (
 	cloud.google.com/go v0.39.0
+	github.com/blendle/zapdriver v1.3.1
+	github.com/go-logr/zapr v0.1.1
 	github.com/go-openapi/spec v0.19.0
 	github.com/google/go-cmp v0.3.0
 	github.com/operator-framework/operator-sdk v0.12.0
 	github.com/prometheus/client_golang v1.0.0
 	github.com/spf13/pflag v1.0.3
 	gocloud.dev v0.18.0
-	google.golang.org/grpc v1.21.1
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/client-go v11.0.0+incompatible

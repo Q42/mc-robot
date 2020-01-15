@@ -20,7 +20,6 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
-	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/operator-framework/operator-sdk/pkg/restmapper"
 	sdkVersion "github.com/operator-framework/operator-sdk/version"
@@ -31,6 +30,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	// Logging documentation: https://github.com/operator-framework/operator-sdk/blob/master/doc/user/logging.md
+	"github.com/blendle/zapdriver"
+	"github.com/go-logr/zapr"
+	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 )
 
 // Change below variables to serve metrics on different host or port.
@@ -73,7 +77,12 @@ func main() {
 	// implementing the logr.Logger interface. This logger will
 	// be propagated through the whole operator, generating
 	// uniform and structured logs.
-	logf.SetLogger(zap.Logger())
+	var stackDriverOptimizedLogger, err = zapdriver.NewProduction()
+	if err != nil {
+		log.Error(err, "Failed to create logger")
+		os.Exit(1)
+	}
+	logf.SetLogger(zapr.NewLogger(stackDriverOptimizedLogger))
 
 	printVersion()
 
