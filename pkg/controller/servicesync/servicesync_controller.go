@@ -572,32 +572,6 @@ func ownerRefS(sync *corev1.Service) metav1.OwnerReference {
 	}
 }
 
-func endpointsForHostsAndPort(nodes []corev1.Node, useExternalIP bool) []mcv1.PeerEndpoint {
-	var list = make([]mcv1.PeerEndpoint, len(nodes))
-	for i, node := range nodes {
-		for _, addr := range node.Status.Addresses {
-			switch t := addr.Type; {
-			case t == corev1.NodeHostName:
-				list[i].Hostname = addr.Address
-			case t == corev1.NodeInternalIP && !useExternalIP:
-				list[i].IPAddress = addr.Address
-			case t == corev1.NodeExternalIP && useExternalIP:
-				list[i].IPAddress = addr.Address
-			}
-		}
-	}
-	return list
-}
-
-func endpointsForIngresses(ingresses []corev1.LoadBalancerIngress) []mcv1.PeerEndpoint {
-	var list = make([]mcv1.PeerEndpoint, len(ingresses))
-	for i, ingress := range ingresses {
-		list[i].Hostname = ingress.Hostname
-		list[i].IPAddress = ingress.IP
-	}
-	return list
-}
-
 // PruneExpired removes clusters from the list if they are LastUpdated too long ago
 func PruneExpired(clusters *map[string]*mcv1.Cluster, maxAgeStr string) (pruned []string) {
 	maxAge, err := time.ParseDuration(maxAgeStr)

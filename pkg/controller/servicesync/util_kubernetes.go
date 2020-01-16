@@ -1,9 +1,11 @@
 package servicesync
 
 import (
-	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"context"
 	stderrors "errors"
+	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
+	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,6 +65,8 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 				})
 			}
 		}
+		sort.Slice(ports, func(i, j int) bool { return ports[i].InternalPort < ports[j].InternalPort })
+		sort.Slice(lbPorts, func(i, j int) bool { return lbPorts[i].InternalPort < lbPorts[j].InternalPort })
 
 		// Load-Balancer service
 		if len(ports) > 0 && len(service.Status.LoadBalancer.Ingress) > 0 && shouldPublishLB(sync) {
@@ -85,7 +89,37 @@ func (r *ReconcileServiceSync) getLocalServiceMap(sync *mcv1.ServiceSync) (map[s
 			logger.Info("Skipping service with only non-NodePort ports", "service", service.Name)
 		}
 	}
+
 	return peerServices, nil
+}
+
+func endpointsForHostsAndPort(nodes []corev1.Node, useExternalIP bool) []mcv1.PeerEndpoint {
+	var list = make([]mcv1.PeerEndpoint, len(nodes))
+	for i, node := range nodes {
+		for _, addr := range node.Status.Addresses {
+			switch t := addr.Type; {
+			case t == corev1.NodeHostName:
+				list[i].Hostname = addr.Address
+			case t == corev1.NodeInternalIP && !useExternalIP:
+				list[i].IPAddress = addr.Address
+			case t == corev1.NodeExternalIP && useExternalIP:
+				list[i].IPAddress = addr.Address
+			}
+		}
+	}
+
+	sort.Slice(list, func(i, j int) bool { return strings.Compare(list[i].IPAddress, list[j].IPAddress) < 0 })
+	return list
+}
+
+func endpointsForIngresses(ingresses []corev1.LoadBalancerIngress) []mcv1.PeerEndpoint {
+	var list = make([]mcv1.PeerEndpoint, len(ingresses))
+	for i, ingress := range ingresses {
+		list[i].Hostname = ingress.Hostname
+		list[i].IPAddress = ingress.IP
+	}
+	sort.Slice(list, func(i, j int) bool { return strings.Compare(list[i].IPAddress, list[j].IPAddress) < 0 })
+	return list
 }
 
 func (r *ReconcileServiceSync) getNodes() ([]corev1.Node, error) {
