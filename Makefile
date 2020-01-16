@@ -14,8 +14,12 @@ help:  ## Display this help
 ##@ Tests
 
 .PHONY: test
-test: ## Run the script check-everything.sh which will check all
+test: ## Run the tests
 	GO111MODULE=on TRACE=1 go test -v ./pkg/controller/servicesync/
+
+.PHONY: test-kube
+test-kube: ## Run the tests with Kubernetes
+	GOFLAGS="-tags=testkube" GO111MODULE=on TRACE=1 go test -v ./pkg/controller/servicesync/
 
 ##@ Build
 
