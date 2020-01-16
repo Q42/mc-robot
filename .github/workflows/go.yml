@@ -28,3 +28,19 @@ jobs:
       env:
         REGISTRY: docker.pkg.github.com/q42
       run: VERSION=$GITHUB_SHA make build
+
+    - name: Push
+      env:
+        REGISTRY: docker.pkg.github.com/q42
+        REGISTRY_REPO: docker.pkg.github.com/q42/mc-robot
+      shell: bash
+      run: |
+        # Login
+        echo ${{ secrets.GITHUB_TOKEN }} | docker login -u $GITHUB_ACTOR --password-stdin $REGISTRY
+        # Push (nb: ${var,,} is a bash trick to lowercase)
+        export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}:$GITHUB_SHA"
+        export DESTINATION_LATEST="docker.pkg.github.com/${GITHUB_REPOSITORY,,}:latest"
+        docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_SHA
+        docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_LATEST
+        docker push $DESTINATION_SHA
+        docker push $DESTINATION_LATEST
