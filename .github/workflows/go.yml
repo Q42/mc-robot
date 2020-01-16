@@ -16,18 +16,12 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
 
-    - name: Get dependencies
-      run: |
-        go get -v -t -d ./...
-        if [ -f Gopkg.toml ]; then
-            curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-            dep ensure
-        fi
-
     - name: Build
       env:
         REGISTRY: docker.pkg.github.com/q42
-      run: VERSION=$GITHUB_SHA make build
+      run: |
+        VERSION=$GITHUB_SHA make test
+        VERSION=$GITHUB_SHA make build
 
     - name: Push
       env:
