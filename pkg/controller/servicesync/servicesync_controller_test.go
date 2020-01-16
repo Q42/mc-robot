@@ -1,8 +1,8 @@
 package servicesync_test
 
 import (
-	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"fmt"
+	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"testing"
 	"time"
 

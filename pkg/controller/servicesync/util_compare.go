@@ -1,8 +1,8 @@
 package servicesync
 
 import (
-	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"math"
+	mcv1 "q42/mc-robot/pkg/apis/mc/v1"
 	"strings"
 	"time"
 

@@ -1,3 +1,7 @@
+[![Go Report Card](https://goreportcard.com/badge/q42/mc-robot)](https://goreportcard.com/report/q42/mc-robot)
+[![Build Status](https://travis-ci.org/q42/mc-robot.svg?branch=master)](https://travis-ci.org/q42/mc-robot)
+[![License](https://img.shields.io/badge/MIT-blue.svg)](https://github.com/q42/mc-robot/blob/master/LICENSE)
+
 # MC Robot <img src=".robot.jpeg#" height="100" />
 An application that manages multi-cluster service discovery & setup.
 The goal of this application is to make services in other clusters easily reachable.

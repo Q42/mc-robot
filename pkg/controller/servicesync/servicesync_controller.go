@@ -616,7 +616,7 @@ func serviceForPeer(peerService mcv1.PeerService, namespace string) (corev1.Serv
 	}
 
 	endpoints.Subsets = []corev1.EndpointSubset{
-		corev1.EndpointSubset{Addresses: addresses, Ports: ports},
+		{Addresses: addresses, Ports: ports},
 	}
 
 	return service, endpoints
