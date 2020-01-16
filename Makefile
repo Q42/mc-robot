@@ -24,12 +24,13 @@ test: ## Run the script check-everything.sh which will check all
 # for more info about trimpath: https://github.com/golang/go/commit/4891a3b66c482b42fdc74ae382e0cf4817d0fda2
 .PHONY: build
 build:
-	echo "Building operator $$(dirname $$PWD);$$HOME"; \
+	echo "Building operator (-trimpath=$$(dirname $$PWD);$$HOME)"; \
 GOOS=linux CGO_ENABLED=0 go build -o build/_output/bin/mc-robot \
 -gcflags "all=-trimpath=$$(dirname $$PWD);$$HOME" \
 -asmflags "all=-trimpath=$$(dirname $$PWD);$$HOME" \
 -ldflags=-buildid= \
 q42/mc-robot/cmd/manager && \
+echo "SHASUM:" && shasum build/_output/bin/mc-robot && \
 docker build -f build/Dockerfile -t $$REGISTRY/mc-robot:$$VERSION .
 
 .PHONY: install
