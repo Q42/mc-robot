@@ -18,22 +18,24 @@ jobs:
 
     - name: Build
       env:
-        REGISTRY: docker.pkg.github.com/q42
+        # Format: docker.pkg.github.com/:owner/:repo_name/:image_name
+        # make build will append "/mc-robot"
+        REGISTRY: docker.pkg.github.com/q42/mc-robot
       run: |
         VERSION=$GITHUB_SHA make test
         VERSION=$GITHUB_SHA make build
 
     - name: Push
       env:
-        REGISTRY: docker.pkg.github.com/q42
-        REGISTRY_REPO: docker.pkg.github.com/q42/mc-robot
+        REGISTRY: docker.pkg.github.com/q42/mc-robot
+        REGISTRY_REPO: docker.pkg.github.com/q42/mc-robot/mc-robot
       shell: bash
       run: |
         # Login
         echo ${{ secrets.GITHUB_TOKEN }} | docker login -u $GITHUB_ACTOR --password-stdin $REGISTRY
         # Push (nb: ${var,,} is a bash trick to lowercase)
-        export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}:$GITHUB_SHA"
-        export DESTINATION_LATEST="docker.pkg.github.com/${GITHUB_REPOSITORY,,}:latest"
+        export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:$GITHUB_SHA"
+        export DESTINATION_LATEST="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:latest"
         docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_SHA
         docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_LATEST
         docker push $DESTINATION_SHA
