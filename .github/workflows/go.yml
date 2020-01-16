@@ -21,9 +21,7 @@ jobs:
         # Format: docker.pkg.github.com/:owner/:repo_name/:image_name
         # make build will append "/mc-robot"
         REGISTRY: docker.pkg.github.com/q42/mc-robot
-      run: |
-        VERSION=$GITHUB_SHA make test
-        VERSION=$GITHUB_SHA make build
+      run: VERSION=$GITHUB_SHA make test build
 
     - name: Push
       env:
@@ -40,3 +38,6 @@ jobs:
         docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_LATEST
         docker push $DESTINATION_SHA
         docker push $DESTINATION_LATEST
+
+    - name: Report
+      run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks

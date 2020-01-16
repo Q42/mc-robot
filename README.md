@@ -1,5 +1,5 @@
 [![Go Report Card](https://goreportcard.com/badge/q42/mc-robot)](https://goreportcard.com/report/q42/mc-robot)
-[![Build Status](https://travis-ci.org/q42/mc-robot.svg?branch=master)](https://travis-ci.org/q42/mc-robot)
+[![Build Status](https://github.com/q42/mc-robot/workflows/Go/badge.svg)](https://github.com/q42/mc-robot/actions)
 [![License](https://img.shields.io/badge/MIT-blue.svg)](https://github.com/q42/mc-robot/blob/master/LICENSE)
 
 # MC Robot <img src=".robot.jpeg#" height="100" />
