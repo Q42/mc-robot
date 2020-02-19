@@ -1,0 +1,43 @@
+name: Go
+on: [push]
+jobs:
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.13
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.13
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v1
+
+    - name: Build
+      env:
+        # Format: docker.pkg.github.com/:owner/:repo_name/:image_name
+        # make build will append "/mc-robot"
+        REGISTRY: docker.pkg.github.com/q42/mc-robot
+      run: VERSION=$GITHUB_SHA make test build
+
+    - name: Push
+      env:
+        REGISTRY: docker.pkg.github.com/q42/mc-robot
+        REGISTRY_REPO: docker.pkg.github.com/q42/mc-robot/mc-robot
+      shell: bash
+      run: |
+        # Login
+        echo ${{ secrets.GITHUB_TOKEN }} | docker login -u $GITHUB_ACTOR --password-stdin $REGISTRY
+        # Push (nb: ${var,,} is a bash trick to lowercase)
+        export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:$GITHUB_SHA"
+        export DESTINATION_LATEST="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:latest"
+        docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_SHA
+        docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_LATEST
+        docker push $DESTINATION_SHA
+        docker push $DESTINATION_LATEST
+
+    - name: Report
+      run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
