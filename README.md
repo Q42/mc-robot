@@ -26,7 +26,7 @@ firewalls correctly.
 ## 1. Install (from registry)
 First prepare a `serviceaccount.json` Service Account file with access to Google PubSub, and install it:
 ```bash
-kubectl create secret mc-robot-credentials --from-file="serviceaccount.json=serviceaccount.json"
+kubectl create secret generic mc-robot-credentials --from-file="serviceaccount.json=serviceaccount.json"
 ```
 
 Then install the CRD & deploy the operator:
