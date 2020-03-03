@@ -47,3 +47,21 @@ func operatorPeerServicesEqual(a, b map[string]*mcv1.PeerService) (bool, string)
 	}
 	return true, ""
 }
+
+// mapContains returns whether a includes all keys & values set in b. So a may contain more than b, but should at least include b.
+func mapContains(a, b map[string]string) bool {
+	for key, bValue := range b {
+		if aValue, aHasKey := a[key]; aHasKey && aValue == bValue {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func mapMerge(a, b map[string]string) map[string]string {
+	for key, bValue := range b {
+		a[key] = bValue
+	}
+	return a
+}

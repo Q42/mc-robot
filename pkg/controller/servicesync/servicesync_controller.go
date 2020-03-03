@@ -493,13 +493,28 @@ func (r *ReconcileServiceSync) ensurePeerServices(instance *mcv1.ServiceSync) er
 		delete(preexistingServicesMap, desiredService.ObjectMeta.Name)
 		currentService := &corev1.Service{}
 		currentEndpoints := &corev1.Endpoints{}
+		annotations := map[string]string{
+			"owner":               instance.Name,
+			"remote-cluster":      peerService.Cluster,
+			"remote-service-name": peerService.ServiceName,
+		}
+
 		err := r.client.Get(context.Background(), types.NamespacedName{Name: desiredService.ObjectMeta.Name, Namespace: instance.GetNamespace()}, currentService)
+		// Update if it changed (or we add annotations in subsequent releases)
+		if err == nil && !mapContains(currentService.Annotations, annotations) {
+			currentService.SetAnnotations(mapMerge(currentService.Annotations, annotations))
+			currentService.SetOwnerReferences([]metav1.OwnerReference{ownerRefSS(instance)})
+			err = r.client.Update(context.Background(), currentService)
+		}
+		// Create if it does not exist
 		if errors.IsNotFound(err) {
 			desiredService.SetOwnerReferences([]metav1.OwnerReference{ownerRefSS(instance)})
-			desiredService.SetAnnotations(map[string]string{"owner": instance.Name})
+			desiredService.SetAnnotations(annotations)
 			err = r.client.Create(context.Background(), &desiredService)
 			currentService = &desiredService
+			err = nil
 		}
+
 		if err != nil {
 			multiError = append(multiError, err)
 			continue
