@@ -60,6 +60,9 @@ func mapContains(a, b map[string]string) bool {
 }
 
 func mapMerge(a, b map[string]string) map[string]string {
+	if a == nil {
+		a = make(map[string]string, 0)
+	}
 	for key, bValue := range b {
 		a[key] = bValue
 	}
