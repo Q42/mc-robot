@@ -52,16 +52,16 @@ send:
 	})
 	metricPublishes.Inc()
 	if err != nil {
-		log.Error(err, "Error while publishing to %s", setting.TopicURL())
 		if strings.Contains(fmt.Sprint(err), "NotFound") {
 			err = p.ensurePubSubTopicSubscription(setting)
 			if err == nil {
 				time.Sleep(1 * time.Second)
 				goto send
 			}
-			log.Error(err, "Error while ensuring topic")
+			log.Error(err, "Error while ensuring topic", "topic", setting.TopicURL())
 			panic(err)
 		}
+		log.Error(err, "Error while publishing", "topic", setting.TopicURL())
 	}
 }
 
