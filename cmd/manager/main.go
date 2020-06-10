@@ -94,7 +94,7 @@ func main() {
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, err.Error())
 		os.Exit(1)
 	}
 
@@ -102,7 +102,7 @@ func main() {
 	// Become the leader before proceeding
 	err = leader.Become(ctx, "mc-robot-lock")
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, err.Error())
 		os.Exit(1)
 	}
 
@@ -113,7 +113,7 @@ func main() {
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, err.Error())
 		os.Exit(1)
 	}
 
@@ -121,7 +121,7 @@ func main() {
 
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Error(err, "")
+		log.Error(err, err.Error())
 		os.Exit(1)
 	}
 
@@ -130,7 +130,7 @@ func main() {
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr, ds); err != nil {
-		log.Error(err, "")
+		log.Error(err, err.Error())
 		os.Exit(1)
 	}
 

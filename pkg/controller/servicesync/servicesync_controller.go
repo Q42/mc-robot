@@ -229,7 +229,7 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
-		reqLogger.Error(err, "failure getting ServiceSync")
+		reqLogger.Error(err, err.Error())
 		return reconcile.Result{}, err
 	}
 
@@ -243,14 +243,14 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 	r.es.Subscribe(instance.Spec.TopicURL, r.callbackFor(request.NamespacedName))
 	err = r.ensurePeerServices(instance)
 	if err != nil {
-		reqLogger.Error(err, "ensurePeerServices")
+		reqLogger.Error(err, err.Error())
 		return reconcile.Result{}, err
 	}
 
 	// Compute our local services & save optionally
 	selfStatus, hasChanged, err := r.ensureLocalStatus(instance)
 	if err != nil {
-		reqLogger.Error(err, "ensureLocalStatus")
+		reqLogger.Error(err, err.Error())
 		return reconcile.Result{}, err
 	}
 	instance.Status.Clusters[r.getClusterName()] = &selfStatus
