@@ -1,15 +1,8 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: servicesyncs.mc.q42.nl
 spec:
-  additionalPrinterColumns:
-  - JSONPath: .spec.selector
-    name: Selector
-    type: string
-  - JSONPath: .status.peers
-    name: Peers
-    type: string
   group: mc.q42.nl
   names:
     kind: ServiceSync
@@ -17,123 +10,130 @@ spec:
     plural: servicesyncs
     singular: servicesync
   scope: Namespaced
-  subresources:
-    status: {}
   validation:
-    openAPIV3Schema:
-      description: ServiceSync is the Schema for the servicesyncs API
-      properties:
-        apiVersion:
-          description: 'APIVersion defines the versioned schema of this representation
-            of an object. Servers should convert recognized schemas to the latest
-            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
-          type: string
-        kind:
-          description: 'Kind is a string value representing the REST resource this
-            object represents. Servers may infer this from the endpoint the client
-            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
-          type: string
-        metadata:
-          type: object
-        spec:
-          description: ServiceSyncSpec defines the desired state of ServiceSync
-          properties:
-            endpointsConfigureMax:
-              description: How many endpoints to configure for each service in this
-                cluster (e.g. how many nodes should act as entry point). 0 is unlimited.
-                Set this to a lower value if any of the clusters has a lot of nodes
-                and a lot of endpoints from this to that cluster causes troubles with
-                the amount of ip table rules.
-              format: int32
-              type: integer
-            endpointsPublishMax:
-              description: How many endpoints to publish from this cluster (e.g. how
-                many nodes should act as entry point). 0 is unlimited. Set this to
-                a lower value if this cluster has a lot of nodes, and the amount of
-                data to sync becomes prohibitive. Note that the limited set of nodes
-                must be capable enough to accept the traffic and must be highly available,
-                e.g. setting it to 1 is not advisable.
-              format: int32
-              type: integer
-            endpointsPublishPreferLoadBalancerIPs:
-              description: Whether Load Balancer IPs must be published instead of
-                node ips if those are configured by the provider platform.
-              type: boolean
-            prunePeerAtAge:
-              description: Age in seconds before removing a peer from the remote services.
-                Default is 0, which means never. Golang duration string. If used,
-                make sure to align the ReconcileInterval & PruneRemoteAtAge between
-                clusters while keeping safe margins.
-              type: string
-            reconcileInterval:
-              description: Publish & update interval in seconds, default 300 s = 5
-                minutes. Golang duration string.
-              type: string
-            selector:
-              description: Label selector for services. Only the services matching
-                this selector will be published.
-              properties:
-                matchExpressions:
-                  description: matchExpressions is a list of label selector requirements.
-                    The requirements are ANDed.
-                  items:
-                    description: A label selector requirement is a selector that contains
-                      values, a key, and an operator that relates the key and values.
-                    properties:
-                      key:
-                        description: key is the label key that the selector applies
-                          to.
-                        type: string
-                      operator:
-                        description: operator represents a key's relationship to a
-                          set of values. Valid operators are In, NotIn, Exists and
-                          DoesNotExist.
-                        type: string
-                      values:
-                        description: values is an array of string values. If the operator
-                          is In or NotIn, the values array must be non-empty. If the
-                          operator is Exists or DoesNotExist, the values array must
-                          be empty. This array is replaced during a strategic merge
-                          patch.
-                        items:
-                          type: string
-                        type: array
-                    required:
-                    - key
-                    - operator
-                    type: object
-                  type: array
-                matchLabels:
-                  additionalProperties:
-                    type: string
-                  description: matchLabels is a map of {key,value} pairs. A single
-                    {key,value} in the matchLabels map is equivalent to an element
-                    of matchExpressions, whose key field is "key", the operator is
-                    "In", and the values array contains only "value". The requirements
-                    are ANDed.
-                  type: object
-              type: object
-            topicURL:
-              description: URL of the PubSub topic, specified as for example "gcppubsub://projects/myproject/topics/mytopic".
-              type: string
-          required:
-          - selector
-          - topicURL
-          type: object
-        status:
-          description: ServiceSyncStatus defines the observed state of ServiceSync
-          properties:
-            clusters:
-              description: Data of all the clusters (including self)
-            peers:
-              description: Which peers are available
-              items:
-                type: string
-              type: array
-          type: object
-      type: object
-  version: v1
   versions:
   - name: v1
     served: true
     storage: true
+    additionalPrinterColumns:
+    - jsonPath: .spec.selector
+      name: Selector
+      type: string
+    - jsonPath: .status.peers
+      name: Peers
+      type: string
+    subresources:
+      status: {}
+    schema:
+      openAPIV3Schema:
+        description: ServiceSync is the Schema for the servicesyncs API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ServiceSyncSpec defines the desired state of ServiceSync
+            properties:
+              endpointsConfigureMax:
+                description: How many endpoints to configure for each service in this
+                  cluster (e.g. how many nodes should act as entry point). 0 is unlimited.
+                  Set this to a lower value if any of the clusters has a lot of nodes
+                  and a lot of endpoints from this to that cluster causes troubles with
+                  the amount of ip table rules.
+                format: int32
+                type: integer
+              endpointsPublishMax:
+                description: How many endpoints to publish from this cluster (e.g. how
+                  many nodes should act as entry point). 0 is unlimited. Set this to
+                  a lower value if this cluster has a lot of nodes, and the amount of
+                  data to sync becomes prohibitive. Note that the limited set of nodes
+                  must be capable enough to accept the traffic and must be highly available,
+                  e.g. setting it to 1 is not advisable.
+                format: int32
+                type: integer
+              endpointsPublishPreferLoadBalancerIPs:
+                description: Whether Load Balancer IPs must be published instead of
+                  node ips if those are configured by the provider platform.
+                type: boolean
+              prunePeerAtAge:
+                description: Age in seconds before removing a peer from the remote services.
+                  Default is 0, which means never. Golang duration string. If used,
+                  make sure to align the ReconcileInterval & PruneRemoteAtAge between
+                  clusters while keeping safe margins.
+                type: string
+              reconcileInterval:
+                description: Publish & update interval in seconds, default 300 s = 5
+                  minutes. Golang duration string.
+                type: string
+              selector:
+                description: Label selector for services. Only the services matching
+                  this selector will be published.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that contains
+                        values, a key, and an operator that relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to a
+                            set of values. Valid operators are In, NotIn, Exists and
+                            DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the operator
+                            is In or NotIn, the values array must be non-empty. If the
+                            operator is Exists or DoesNotExist, the values array must
+                            be empty. This array is replaced during a strategic merge
+                            patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator is
+                      "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              topicURL:
+                description: URL of the PubSub topic, specified as for example "gcppubsub://projects/myproject/topics/mytopic".
+                type: string
+            required:
+            - selector
+            - topicURL
+            type: object
+          status:
+            description: ServiceSyncStatus defines the observed state of ServiceSync
+            properties:
+              clusters:
+                description: Data of all the clusters (including self)
+              peers:
+                description: Which peers are available
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
