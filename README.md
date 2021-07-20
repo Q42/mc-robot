@@ -2,6 +2,10 @@
 [![Build Status](https://github.com/q42/mc-robot/workflows/Go/badge.svg)](https://github.com/q42/mc-robot/actions)
 [![License](https://img.shields.io/badge/MIT-blue.svg)](https://github.com/q42/mc-robot/blob/master/LICENSE)
 
+**Warning: this uses Operator SDK 0.12 while 1+ is out.** See
+https://sdk.operatorframework.io/docs/building-operators/golang/migration/
+before upgrading as 0.12 no longer builds due to missing dependencies.
+
 # MC Robot <img src=".robot.jpeg#" height="100" />
 An application that manages multi-cluster service discovery & setup.
 The goal of this application is to make services in other clusters easily reachable.
