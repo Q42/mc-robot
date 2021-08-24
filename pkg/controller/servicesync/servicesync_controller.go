@@ -233,6 +233,12 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
+	// Prune any old cluster resources
+	if err = r.ensurePruned(request.NamespacedName, instance); err != nil {
+		logOnError(err, "ensurePruned")
+		return reconcile.Result{}, err
+	}
+
 	// Broadcast once after coming online
 	if !hasRequestedBroadcastOnce {
 		hasRequestedBroadcastOnce = true
@@ -332,7 +338,9 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		if string(dataJson) == broadcastRequestPayload {
 			sync := &mcv1.ServiceSync{}
 			err := r.client.Get(context.Background(), name, sync)
-			_, err = r.publish(sync)
+			if err == nil {
+				_, err = r.publish(sync)
+			}
 			logOnError(err, "Failed to broadcast ServiceSync")
 			return
 		}
@@ -410,7 +418,6 @@ func (r *ReconcileServiceSync) ensureLocalStatus(instance *mcv1.ServiceSync) (cu
 // Writing the remote status to the local ServiceSync.Status object
 func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, cluster mcv1.Cluster) error {
 	ctx := context.Background()
-	logger := log.WithValues("servicesync", name.Name)
 
 	// Load latest state
 	instance := &mcv1.ServiceSync{}
@@ -427,6 +434,19 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, clu
 	instance.Status.Clusters[cluster.Name] = &cluster
 	instance.Status.Peers = filterOut(keys(instance.Status.Clusters), r.getClusterName())
 
+	return r.save(name, originalInstance, instance)
+}
+
+// Writing the remote status to the local ServiceSync.Status object
+func (r *ReconcileServiceSync) ensurePruned(name types.NamespacedName, instance *mcv1.ServiceSync) error {
+	logger := log.WithValues("servicesync", name.Name)
+
+	// Save original state
+	originalInstance := instance.DeepCopy()
+	if instance.Status.Clusters == nil {
+		instance.Status.Clusters = make(map[string]*mcv1.Cluster, 0)
+	}
+
 	// Prune old/expired clusters
 	pruned := PruneExpired(&instance.Status.Clusters, instance.Spec.PrunePeerAtAge)
 	if len(pruned) > 0 {
@@ -434,10 +454,18 @@ func (r *ReconcileServiceSync) ensureRemoteStatus(name types.NamespacedName, clu
 		r.recorder.Eventf(instance, eventTypeNormal, "PrunedClusters", "Pruned remote clusters %s", pruned)
 	}
 
+	return r.save(name, originalInstance, instance)
+}
+
+// Writing the remote status to the local ServiceSync.Status object
+func (r *ReconcileServiceSync) save(name types.NamespacedName, originalInstance *mcv1.ServiceSync, instance *mcv1.ServiceSync) error {
+	ctx := context.Background()
+	logger := log.WithValues("servicesync", name.Name)
+
 	// Patch if necessary
 	if !operatorStatusesEqual(originalInstance.Status, instance.Status) {
 		// update the Status of the resource with the special client.Status()-client (nothing happens when you don't use the sub-client):
-		err = r.client.Status().Patch(ctx, instance, client.MergeFrom(originalInstance))
+		err := r.client.Status().Patch(ctx, instance, client.MergeFrom(originalInstance))
 		if err == nil {
 			logger.Info("Patched ServiceSync status")
 			r.recorder.Eventf(instance, eventTypeNormal, "EnsuringRemoteStatus", "Remote status patched")
