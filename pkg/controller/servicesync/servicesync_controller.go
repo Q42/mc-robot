@@ -196,7 +196,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	return nil
 }
 
-var hasRequestedBroadcastOnce = false
+var lastRequestedBroadcast = time.Time{}
 
 // blank assignment to verify that ReconcileServiceSync implements reconcile.Reconciler
 var _ reconcile.Reconciler = &ReconcileServiceSync{}
@@ -233,15 +233,9 @@ func (r *ReconcileServiceSync) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	// Prune any old cluster resources
-	if err = r.ensurePruned(request.NamespacedName, instance); err != nil {
-		logOnError(err, "ensurePruned")
-		return reconcile.Result{}, err
-	}
-
 	// Broadcast once after coming online
-	if !hasRequestedBroadcastOnce {
-		hasRequestedBroadcastOnce = true
+	if time.Since(lastRequestedBroadcast) > time.Hour {
+		lastRequestedBroadcast = time.Now()
 		r.es.Publish(instance.Spec.TopicURL, []byte(broadcastRequestPayload), clusterName)
 	}
 
@@ -329,10 +323,18 @@ func (r *ReconcileServiceSync) enqueueAllServiceSyncs(a handler.MapObject) []rec
 // This callback parses and then writes the data of remote PeerServices to our cluster, using ensureRemoteStatus
 func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byte, string) {
 	return func(dataJson []byte, from string) {
+		logger := log.WithValues("sender", from)
+		sync := &mcv1.ServiceSync{}
+
 		if from == r.getClusterName() {
+			// If this is our own message, only run the cleanup (if we receive our own message we know for sure that PubSub is working so we can prune other clusters)
+			err := r.client.Get(context.Background(), name, sync)
+			if err == nil {
+				err = r.ensurePruned(name, sync)
+				logOnError(err, "Failed to prune ServiceSync")
+			}
 			return
 		}
-		logger := log.WithValues("sender", from)
 
 		// Handle broadcast requests
 		if string(dataJson) == broadcastRequestPayload {
@@ -368,6 +370,12 @@ func (r *ReconcileServiceSync) callbackFor(name types.NamespacedName) func([]byt
 		// Save
 		err = r.ensureRemoteStatus(name, cluster)
 		logOnError(err, "ensureRemoteStatus")
+
+		// Also cleanup expired entries, after writing new data
+		if err == nil {
+			err = r.ensurePruned(name, sync)
+			logOnError(err, "Failed to prune ServiceSync")
+		}
 	}
 }
 
