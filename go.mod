@@ -2,6 +2,8 @@ module q42/mc-robot
 
 go 1.13
 
+replace bitbucket.org/ww/goautoneg => github.com/adjust/goautoneg v0.0.0-20150426214442-d788f35a0315
+
 require (
 	cloud.google.com/go v0.39.0
 	github.com/blendle/zapdriver v1.3.1
@@ -9,9 +11,12 @@ require (
 	github.com/go-openapi/spec v0.19.0
 	github.com/google/go-cmp v0.3.0
 	github.com/operator-framework/operator-sdk v0.12.0
-	github.com/prometheus/client_golang v1.0.0
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/prometheus/client_golang v1.1.0
 	github.com/spf13/pflag v1.0.3
+	github.com/stretchr/testify v1.6.1 // indirect
 	gocloud.dev v0.18.0
+	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c // indirect
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/client-go v11.0.0+incompatible
