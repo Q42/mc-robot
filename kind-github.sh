@@ -24,8 +24,7 @@ EOF
 # login to gcr in DOCKER_CONFIG using an access token
 # https://cloud.google.com/container-registry/docs/advanced-authentication#access_token
 echo "Logging in to temporary docker client config directory ..."
-echo ${{ secrets.GITHUB_TOKEN }} | \
-  docker login -u $GITHUB_ACTOR --password-stdin $REGISTRY
+echo $2 | docker login -u $1 --password-stdin $REGISTRY
 
 # setup credentials on each node
 echo "Moving credentials to kind cluster name='${KIND_CLUSTER_NAME}' nodes ..."
