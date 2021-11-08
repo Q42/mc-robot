@@ -50,6 +50,7 @@ jobs:
     - uses: helm/kind-action@v1.2.0
       with:
         version: "v0.11.1"
+        cluster_name: cluster1
 
     - name: Debug
       run: |
@@ -60,6 +61,7 @@ jobs:
     - name: Install CRD and resources
       env:
         REGISTRY: docker.pkg.github.com/q42/mc-robot
+        KIND_CLUSTER_NAME: cluster1
       run: |
         # Get docker image access (see go.yml)
         ./kind-github.sh $GITHUB_ACTOR ${{ secrets.GITHUB_TOKEN }}
