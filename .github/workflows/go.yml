@@ -5,6 +5,11 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor
+        ports: ["80:8080"]
+
     steps:
 
     - name: Set up Go 1.13
@@ -38,6 +43,17 @@ jobs:
         docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_LATEST
         docker push $DESTINATION_SHA
         docker push $DESTINATION_LATEST
+
+    - name: Build OpenAPI 3.0 schema from CRD
+      uses: mikefarah/yq@master
+      with:
+        cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
+    - # https://swagger.io/blog/api-design/validate-openapi-definitions-swagger-editor/
+      name: Validate OpenAPI definition
+      uses: char0n/swagger-editor-validate@v1.2.1
+      with:
+        swagger-editor-url: http://localhost/
+        definition-file: schema.yml
 
     - uses: engineerd/setup-kind@v0.5.0
     - name: Debug
