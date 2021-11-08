@@ -69,7 +69,7 @@ jobs:
         # Install resources
         export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:$GITHUB_SHA"
         cat deploy/* deploy/examples/* | \
-        sed  --expression "s|REPLACE_IMAGE|$DESTINATION_SHA|" | \
+        sed  --expression "s|REPLACE_IMAGE|$DESTINATION_SHA|" | tee -a /dev/stderr | \
         kubectl apply --server-side -f -
 
     - name: Build OpenAPI 3.0 schema from CRD
