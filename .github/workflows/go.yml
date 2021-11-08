@@ -47,7 +47,10 @@ jobs:
     - name: Report
       run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
 
-    - uses: engineerd/setup-kind@v0.5.0
+    - uses: helm/kind-action@v1.2.0
+      with:
+        version: "v0.11.1"
+
     - name: Debug
       run: |
         kubectl cluster-info
