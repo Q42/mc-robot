@@ -44,16 +44,8 @@ jobs:
         docker push $DESTINATION_SHA
         docker push $DESTINATION_LATEST
 
-    - name: Build OpenAPI 3.0 schema from CRD
-      uses: mikefarah/yq@master
-      with:
-        cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
-    - # https://swagger.io/blog/api-design/validate-openapi-definitions-swagger-editor/
-      name: Validate OpenAPI definition
-      uses: char0n/swagger-editor-validate@v1.2.1
-      with:
-        swagger-editor-url: http://localhost/
-        definition-file: schema.yml
+    - name: Report
+      run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
 
     - uses: engineerd/setup-kind@v0.5.0
     - name: Debug
@@ -75,5 +67,13 @@ jobs:
         sed "s/REPLACE_IMAGE/$DESTINATION_SHA/g" \
         kubectl apply --server-side -f -
 
-    - name: Report
-      run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
+    - name: Build OpenAPI 3.0 schema from CRD
+      uses: mikefarah/yq@master
+      with:
+        cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
+    - # https://swagger.io/blog/api-design/validate-openapi-definitions-swagger-editor/
+      name: Validate OpenAPI definition
+      uses: char0n/swagger-editor-validate@v1.2.1
+      with:
+        swagger-editor-url: http://localhost/
+        definition-file: schema.yml
