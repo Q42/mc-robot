@@ -44,9 +44,6 @@ jobs:
         docker push $DESTINATION_SHA
         docker push $DESTINATION_LATEST
 
-    - name: Report
-      run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
-
     - uses: helm/kind-action@v1.2.0
       with:
         version: "v0.11.1"
@@ -82,3 +79,6 @@ jobs:
       with:
         swagger-editor-url: http://localhost/
         definition-file: schema.yml
+
+    - name: Report
+      run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
