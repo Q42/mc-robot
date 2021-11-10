@@ -41,3 +41,4 @@ spec:
           secret:
             # create this secret with serviceaccount.json
             secretName: mc-robot-credentials
+---

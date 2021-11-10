@@ -16,6 +16,19 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
 
+
+    # Validate CRD schema
+    - name: Build OpenAPI 3.0 schema from CRD
+      uses: mikefarah/yq@master
+      with:
+        cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
+    - run: echo "{}" > package.json && echo "{}" > package-lock.json
+    - uses: actions/setup-node@v2
+      with: { node-version: '14', cache: 'npm' }
+    - name: Validate OpenAPI definition
+      run: npm install yaml openapi-schema-validator && node validate.js
+
+    # Golang
     - name: Build
       env:
         # Format: docker.pkg.github.com/:owner/:repo_name/:image_name
@@ -38,6 +51,32 @@ jobs:
         docker tag $REGISTRY_REPO:$GITHUB_SHA $DESTINATION_LATEST
         docker push $DESTINATION_SHA
         docker push $DESTINATION_LATEST
+
+    # Kubernetes validation
+    - uses: helm/kind-action@v1.2.0
+      with:
+        version: "v0.11.1"
+        cluster_name: cluster1
+    - name: Debug
+      run: |
+        kubectl cluster-info
+        kubectl get pods -n kube-system
+        echo "current-context:" $(kubectl config current-context)
+        echo "environment-kubeconfig:" ${KUBECONFIG}
+    - name: Install CRD and resources
+      env:
+        REGISTRY: docker.pkg.github.com/q42/mc-robot
+        KIND_CLUSTER_NAME: cluster1
+      run: |
+        # Get docker image access (see go.yml)
+        ./kind-github.sh $GITHUB_ACTOR ${{ secrets.GITHUB_TOKEN }}
+
+        # Install resources
+        export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:$GITHUB_SHA"
+        cat deploy/* | sed  --expression "s|REPLACE_IMAGE|$DESTINATION_SHA|" | tee -a /dev/stderr | \
+        kubectl apply -f -
+        cat deploy/examples/* | \
+        kubectl apply -f -
 
     - name: Report
       run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks

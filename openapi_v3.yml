@@ -1,0 +1,8 @@
+openapi: 3.0.1
+info:
+  title: Kubernetes CRD
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    CRD: {} # inject CRD .spec.versions[0].schema.openAPIV3Schema here
