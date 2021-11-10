@@ -8,7 +8,7 @@ jobs:
     services:
       swagger-editor:
         image: swaggerapi/swagger-editor
-        ports: ["80:8080"]
+        ports: ["8080/tcp"]
 
     steps:
 
@@ -21,6 +21,26 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
 
+    - name: Debug Swagger
+      env:
+        URL: http://localhost:${{ job.services.swagger-editor.ports[8080] }}/
+      shell: bash
+      run: |
+        curl $URL
+
+    # Validate CRD schema
+    - name: Build OpenAPI 3.0 schema from CRD
+      uses: mikefarah/yq@master
+      with:
+        cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
+    - # https://swagger.io/blog/api-design/validate-openapi-definitions-swagger-editor/
+      name: Validate OpenAPI definition
+      uses: char0n/swagger-editor-validate@v1.2.1
+      with:
+        swagger-editor-url: http://localhost:${{ job.services.swagger-editor.ports[8080] }}/
+        definition-file: schema.yml
+
+    # Golang
     - name: Build
       env:
         # Format: docker.pkg.github.com/:owner/:repo_name/:image_name
@@ -44,11 +64,11 @@ jobs:
         docker push $DESTINATION_SHA
         docker push $DESTINATION_LATEST
 
+    # Kubernetes validation
     - uses: helm/kind-action@v1.2.0
       with:
         version: "v0.11.1"
         cluster_name: cluster1
-
     - name: Debug
       run: |
         kubectl cluster-info
@@ -69,17 +89,6 @@ jobs:
         kubectl apply -f -
         cat deploy/examples/* | \
         kubectl apply -f -
-
-    - name: Build OpenAPI 3.0 schema from CRD
-      uses: mikefarah/yq@master
-      with:
-        cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
-    - # https://swagger.io/blog/api-design/validate-openapi-definitions-swagger-editor/
-      name: Validate OpenAPI definition
-      uses: char0n/swagger-editor-validate@v1.2.1
-      with:
-        swagger-editor-url: http://localhost/
-        definition-file: schema.yml
 
     - name: Report
       run: curl -d "repo=github.com/q42/mc-robot" https://goreportcard.com/checks
