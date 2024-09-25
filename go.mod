@@ -1,6 +1,6 @@
 module q42/mc-robot
 
-go 1.13
+go 1.22
 
 replace bitbucket.org/ww/goautoneg => github.com/adjust/goautoneg v0.0.0-20150426214442-d788f35a0315
 
