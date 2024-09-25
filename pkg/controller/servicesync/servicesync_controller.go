@@ -663,6 +663,10 @@ func serviceForPeer(peerService mcv1.PeerService, namespace string) (corev1.Serv
 	}
 
 	for _, host := range peerService.Endpoints {
+		if host.IPAddress == "" {
+			log.Info("empty IP address, skipping", "host", host.Hostname)
+			continue
+		}
 		addresses = append(addresses, corev1.EndpointAddress{IP: host.IPAddress})
 	}
 
