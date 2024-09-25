@@ -72,7 +72,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45 // indirect
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58 // indirect
 	golang.org/x/sys v0.25.0 // indirect
-	golang.org/x/text v0.3.2 // indirect
+	golang.org/x/text v0.3.8 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.0.1 // indirect
