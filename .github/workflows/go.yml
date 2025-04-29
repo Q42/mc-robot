@@ -54,6 +54,7 @@ jobs:
         run: VERSION=$GITHUB_SHA make test build
 
       - name: Push
+        if: success() && github.event_name == 'push'
         env:
           REGISTRY: docker.pkg.github.com/q42/mc-robot
           REGISTRY_REPO: docker.pkg.github.com/q42/mc-robot/mc-robot
