@@ -25,11 +25,25 @@ jobs:
         uses: mikefarah/yq@master
         with:
           cmd: yq eval-all '.components.schemas.CRD = .spec.versions[0].schema.openAPIV3Schema | select(filename == "openapi_v3.yml")' deploy/0_mc.q42.nl_servicesyncs_crd.yaml openapi_v3.yml > schema.yml
+
       - run: echo "{}" > package.json && echo "{}" > package-lock.json
+
       - uses: actions/setup-node@v4
         with: { node-version: "14", cache: "npm" }
+
       - name: Validate OpenAPI definition
         run: npm install yaml openapi-schema-validator && node validate.js
+
+      # Docker
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: docker.pkg.github.com/q42/mc-robot
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       # Golang
       - name: Build
@@ -45,8 +59,6 @@ jobs:
           REGISTRY_REPO: docker.pkg.github.com/q42/mc-robot/mc-robot
         shell: bash
         run: |
-          # Login
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login -u $GITHUB_ACTOR --password-stdin $REGISTRY
           # Push (nb: ${var,,} is a bash trick to lowercase)
           export DESTINATION_SHA="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:$GITHUB_SHA"
           export DESTINATION_LATEST="docker.pkg.github.com/${GITHUB_REPOSITORY,,}/mc-robot:latest"
@@ -60,12 +72,14 @@ jobs:
         with:
           version: "v0.11.1"
           cluster_name: cluster1
+
       - name: Debug
         run: |
           kubectl cluster-info
           kubectl get pods -n kube-system
           echo "current-context:" $(kubectl config current-context)
           echo "environment-kubeconfig:" ${KUBECONFIG}
+
       - name: Install CRD and resources
         env:
           REGISTRY: docker.pkg.github.com/q42/mc-robot
